@@ -1097,10 +1097,14 @@ class LLVMIRGenerator:
             if self.target.now_pinning:
                 # Word swap now.old as CPU is little endian
                 # Most significant word is stored in lower address (see generated csr.rs)
-                llnow_raw = self.llbuilder.load(self.llbuiltin("now"), name=insn.name)
-                llnow_lo = self.llbuilder.shl(llnow_raw, ll.Constant(lli64, 32))
-                llnow_hi = self.llbuilder.lshr(llnow_raw, ll.Constant(lli64, 32))
-                return self.llbuilder.or_(llnow_lo, llnow_hi)
+                llnow_hiptr = self.llbuilder.bitcast(self.llbuiltin("now"), lli32.as_pointer())
+                llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(2)])
+                llnow_hi = self.llbuilder.load(llnow_hiptr, name="now.hi")
+                llnow_lo = self.llbuilder.load(llnow_loptr, name="now.lo")
+                llzext_hi = self.llbuilder.zext(llnow_hi, lli64)
+                llshifted_hi = self.llbuilder.shl(llzext_hi, ll.Constant(lli64, 32))
+                llzext_lo = self.llbuilder.zext(llnow_lo, lli64)
+                return self.llbuilder.or_(llshifted_hi, llzext_lo)
             else:
                 return self.llbuilder.call(self.llbuiltin("now_mu"), [])
         elif insn.op == "at_mu":
@@ -1110,7 +1114,7 @@ class LLVMIRGenerator:
                 lltime_hi = self.llbuilder.trunc(self.llbuilder.lshr(lltime, ll.Constant(lli64, 32)), lli32)
                 lltime_lo = self.llbuilder.trunc(lltime, lli32)
                 llnow_hiptr = self.llbuilder.bitcast(self.llbuiltin("now"), lli32.as_pointer())
-                llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(1)])
+                llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(2)])
                 llstore_hi = self.llbuilder.store_atomic(lltime_hi, llnow_hiptr, ordering="seq_cst", align=4)
                 llstore_lo = self.llbuilder.store_atomic(lltime_lo, llnow_loptr, ordering="seq_cst", align=4)
                 return llstore_lo
@@ -1120,20 +1124,29 @@ class LLVMIRGenerator:
             interval, = insn.operands
             llinterval = self.map(interval)
             if self.target.now_pinning:
-                llnowptr = self.llbuiltin("now")
-                llnow = self.llbuilder.load(llnowptr, name="now.old")
+                # llnowptr = self.llbuiltin("now")
+                # llnow = self.llbuilder.load(llnowptr, name="now.old")
 
-                # Word swap now.old as CPU is little endian
-                # Most significant word is stored in lower address (see generated csr.rs)
-                llnow_lo = self.llbuilder.shl(llnow, ll.Constant(lli64, 32))
-                llnow_hi = self.llbuilder.lshr(llnow, ll.Constant(lli64, 32))
-                llnow = self.llbuilder.or_(llnow_lo, llnow_hi)
+                # # Word swap now.old as CPU is little endian
+                # # Most significant word is stored in lower address (see generated csr.rs)
+                # llnow_lo = self.llbuilder.shl(llnow, ll.Constant(lli64, 32))
+                # llnow_hi = self.llbuilder.lshr(llnow, ll.Constant(lli64, 32))
+                # llnow = self.llbuilder.or_(llnow_lo, llnow_hi)
+
+                llnow_hiptr = self.llbuilder.bitcast(self.llbuiltin("now"), lli32.as_pointer())
+                llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(2)])
+                llnow_hi = self.llbuilder.load(llnow_hiptr, name="now.hi")
+                llnow_lo = self.llbuilder.load(llnow_loptr, name="now.lo")
+                llzext_hi = self.llbuilder.zext(llnow_hi, lli64)
+                llshifted_hi = self.llbuilder.shl(llzext_hi, ll.Constant(lli64, 32))
+                llzext_lo = self.llbuilder.zext(llnow_lo, lli64)
+                llnow = self.llbuilder.or_(llshifted_hi, llzext_lo)
 
                 lladjusted = self.llbuilder.add(llnow, llinterval, name="now.new")
                 lladjusted_hi = self.llbuilder.trunc(self.llbuilder.lshr(lladjusted, ll.Constant(lli64, 32)), lli32)
                 lladjusted_lo = self.llbuilder.trunc(lladjusted, lli32)
-                llnow_hiptr = self.llbuilder.bitcast(llnowptr, lli32.as_pointer())
-                llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(1)])
+                # llnow_hiptr = self.llbuilder.bitcast(llnowptr, lli32.as_pointer())
+                # llnow_loptr = self.llbuilder.gep(llnow_hiptr, [self.llindex(2)])
                 llstore_hi = self.llbuilder.store_atomic(lladjusted_hi, llnow_hiptr, ordering="seq_cst", align=4)
                 llstore_lo = self.llbuilder.store_atomic(lladjusted_lo, llnow_loptr, ordering="seq_cst", align=4)
                 return llstore_lo

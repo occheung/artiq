@@ -28,7 +28,7 @@ class KernelCPU(Module):
                 exec_address))
 
         # DRAM access
-        self.wb_sdram = wishbone.Interface()
+        self.wb_sdram = wishbone.Interface(data_width=64, adr_width=29)
         self.add_wb_slave(main_mem_origin, 0x10000000, self.wb_sdram)
 
     def get_csrs(self):

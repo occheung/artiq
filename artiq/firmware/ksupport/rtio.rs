@@ -47,14 +47,14 @@ mod imp {
     #[inline(always)]
     pub unsafe fn rtio_o_data_write(offset: usize, data: u32) {
         write_volatile(
-            csr::rtio::O_DATA_ADDR.offset((csr::rtio::O_DATA_SIZE - 1 - offset) as isize),
+            csr::rtio::O_DATA_ADDR.offset(2*(csr::rtio::O_DATA_SIZE - 1 - offset) as isize),
             data);
     }
 
     #[inline(always)]
     pub unsafe fn rtio_i_data_read(offset: usize) -> u32 {
         read_volatile(
-            csr::rtio::I_DATA_ADDR.offset((csr::rtio::I_DATA_SIZE - 1 - offset) as isize))
+            csr::rtio::I_DATA_ADDR.offset(2*(csr::rtio::I_DATA_SIZE - 1 - offset) as isize))
     }
 
     #[inline(never)]
