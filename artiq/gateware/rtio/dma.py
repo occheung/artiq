@@ -20,13 +20,13 @@ def reverse_bytes(s):
 def convert_signal(signal):
     assert len(signal) % 8 == 0
     nbytes = len(signal)//8
-    assert nbytes % 4 == 0
-    nwords = nbytes//4
+    assert nbytes % 8 == 0
+    nwords = nbytes//8
     signal_words = []
     for i in range(nwords):
         signal_bytes = []
-        for j in range(4):
-            signal_bytes.append(signal[8*(j+i*4):8*((j+i*4)+1)])
+        for j in range(8):
+            signal_bytes.append(signal[8*(j+i*8):8*((j+i*8)+1)])
         signal_words.extend(reversed(signal_bytes))
     return Cat(*signal_words)
 
