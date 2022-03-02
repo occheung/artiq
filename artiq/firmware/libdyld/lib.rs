@@ -101,6 +101,8 @@ pub struct Library<'a> {
     pub strtab:      &'a [u8],
     pub symtab:      &'a [Elf32_Sym],
     pub eh_frame_sec_ind: usize,
+    pub rtio_output_slot_off: usize,
+    pub rtio_output_wide_slot_off: usize,
 }
 
 impl<'a> Library<'a> {
@@ -141,8 +143,14 @@ impl<'a> Library<'a> {
     }
 
     // This is unsafe because it mutates global data (the PLT).
+    // Only supports the rebinding of rtio_output & rtio_output_wide.
     pub unsafe fn rebind(&self, name: &[u8], addr: Elf32_Word) -> Result<(), Error<'a>> {
-        unimplemented!()
+        match name {
+            b"rtio_output" => *((self.image_off + self.rtio_output_slot_off as Elf32_Word + 0xc) as *mut Elf32_Word) = addr,
+            b"rtio_output_wide" => *((self.image_off + self.rtio_output_wide_slot_off as Elf32_Word + 0xc) as *mut Elf32_Word) = addr,
+            _ => unimplemented!()
+        }
+        Ok(())
     }
 
     pub fn resolve_rela(&self, rela: &Elf32_Rela, target_section: Elf32_Half, resolve: &dyn Fn(&[u8]) -> Option<Elf32_Word>)
@@ -163,11 +171,16 @@ impl<'a> Library<'a> {
             // If not, try to resolve the symbol using the provided resolve function
             let resolve_sym = || -> Result<Elf32_Word, Error<'a>> {
                 let sym_name = name_starting_at_slice(self.strtab, sym.st_name as usize)?;
-                match resolve(sym_name) {
-                    Some(value) => Ok(value as Elf32_Word),
-                    None => {
-                        // We couldn't find it anywhere.
-                        Err(Error::Lookup(sym_name))
+                // Symbols that can be rebind should directly refer to the PLT
+                match sym_name {
+                    b"rtio_output" => Ok(self.image_off + self.rtio_output_slot_off as Elf32_Word),
+                    b"rtio_output_wide" => Ok(self.image_off + self.rtio_output_wide_slot_off as Elf32_Word),
+                    _ => match resolve(sym_name) {
+                        Some(value) => Ok(value as Elf32_Word),
+                        None => {
+                            // We couldn't find it anywhere.
+                            Err(Error::Lookup(sym_name))
+                        }
                     }
                 }
             };
@@ -544,8 +557,32 @@ impl<'a> Library<'a> {
             }
         }
 
-        // Forget data
-        mem::drop(data);
+        // Include a procedura linkage table (PLT)
+        // The table only need to provide linkage to `rtio_output` and `rtio_output_wide`
+        // Only these 2 functions can be rebinded
+        // For each entry, use auipc+lw to load destination, and jr to jump
+        // The destination is located at memory offset 0xc from the first insn
+        // Always use register t3 (x28)
+        let write_ptr_entry = |offset: &mut usize, sym_name: &'static str| -> Result<(), Error> {
+            unsafe {
+                let dest_ptr = image.as_ptr().add(*offset) as *mut u32;
+                *dest_ptr = 0 << 12 | 0b11100 << 7 | 0b0010111;
+                *(dest_ptr.offset(1)) = 0xc << 20 | 0b11100 << 15 |0b010 << 12 | 0b11100 << 7 | 0b0000011;
+                *(dest_ptr.offset(2)) = 0 << 20 | 0b11100 << 15 |0b000 << 12 | 0b00000 << 7 | 0b1100111;
+                *(dest_ptr.offset(3)) = resolve(sym_name.as_bytes()).ok_or_else(|| Error::Lookup(sym_name.as_bytes()))?;
+                *offset += 0x10;
+                Ok(())
+            }
+        };
+
+        // Keep the entire table 0x10 bytes aligned
+        let plt_align = 0x10;
+        load_off += (plt_align - (load_off % plt_align)) % plt_align;
+
+        let rtio_output_slot_off = load_off;
+        write_ptr_entry(&mut load_off, "rtio_output")?;
+        let rtio_output_wide_slot_off = load_off;
+        write_ptr_entry(&mut load_off, "rtio_output_wide")?;
 
         // Drop the mutability. See also the comment below.
         let image = &*image;
@@ -565,6 +602,8 @@ impl<'a> Library<'a> {
             symtab:      symtab,
             sectab:      sectab,
             eh_frame_sec_ind: eh_frame_sec_ind,
+            rtio_output_slot_off: rtio_output_slot_off,
+            rtio_output_wide_slot_off: rtio_output_wide_slot_off,
         };
 
         // If a borrow exists anywhere, the borrowed memory cannot be mutated except
@@ -577,6 +616,7 @@ impl<'a> Library<'a> {
         // we never write to the memory they refer to, so it's safe.
         mem::drop(image);
 
+        // Perform all available relocations
         for sec in library.sectab {
             if let SectionType::RELA(resolve_ind) = sec.sh_type {
                 let rela = get_ref_slice::<Elf32_Rela>(image, sec.sh_off, sec.sh_size / mem::size_of::<Elf32_Rela>()).unwrap();
