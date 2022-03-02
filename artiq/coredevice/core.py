@@ -87,6 +87,11 @@ class Core:
 
         symbolizer = lambda addresses: symbolize(kernel_library, addresses)
 
+        file = open("kernel.o", "wb")
+        file.write(kernel_library)
+        file.flush()
+        file.close()
+
         self.comm.load(kernel_library)
         self.comm.run()
         self.comm.serve(self.embedding_map, symbolizer)

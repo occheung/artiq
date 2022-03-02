@@ -477,17 +477,11 @@ pub unsafe fn main() {
         }
     });
 
-    let __bss_start = library.lookup(b"__bss_start").unwrap();
-    let _end = library.lookup(b"_end").unwrap();
-    let __modinit__ = library.lookup(b"__modinit__").unwrap();
-    let typeinfo = library.lookup(b"typeinfo");
-    let _sstack_guard = library.lookup(b"_sstack_guard").unwrap();
+    let __modinit__ = library.lookup(b"__modinit__", false).unwrap();
+    let typeinfo = library.lookup(b"typeinfo", false);
 
     LIBRARY = Some(library);
 
-    ptr::write_bytes(__bss_start as *mut u8, 0, (_end - __bss_start) as usize);
-
-    board_misoc::pmp::init_stack_guard(_sstack_guard as usize);
     board_misoc::cache::flush_cpu_dcache();
     board_misoc::cache::flush_cpu_icache();
 

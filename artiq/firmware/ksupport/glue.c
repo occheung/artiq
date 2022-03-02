@@ -15,7 +15,7 @@ void send_to_core_log(struct slice str);
 void send_to_rtio_log(struct slice data);
 
 #define KERNELCPU_EXEC_ADDRESS    0x45000000
-#define KERNELCPU_PAYLOAD_ADDRESS 0x45060000
+#define KERNELCPU_PAYLOAD_ADDRESS 0x45070000
 #define KERNELCPU_LAST_ADDRESS    0x4fffffff
 #define KSUPPORT_HEADER_SIZE      0x80
 
@@ -77,14 +77,13 @@ int dl_iterate_phdr (int (*callback)(struct dl_phdr_info *, size_t, void *), voi
     if(retval)
         return retval;
 
-    ehdr = (Elf32_Ehdr *)KERNELCPU_PAYLOAD_ADDRESS;
     phdr_info = (struct dl_phdr_info){
         .dlpi_addr  = KERNELCPU_PAYLOAD_ADDRESS,
         .dlpi_name  = "<kernel>",
-        .dlpi_phdr  = (Elf32_Phdr*) ((intptr_t)ehdr + ehdr->e_phoff),
-        .dlpi_phnum = ehdr->e_phnum,
+        .dlpi_phdr  = (Elf32_Phdr*) KERNELCPU_PAYLOAD_ADDRESS,
+        .dlpi_phnum = 2,
     };
-    retval = callback(&phdr_info, sizeof(phdr_info), data);
+    retval = callback(&phdr_info, sizeof(phdr_info), data);   
     return retval;
 }
 

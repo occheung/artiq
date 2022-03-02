@@ -2,7 +2,7 @@ use core::fmt;
 use dyld;
 
 pub const KERNELCPU_EXEC_ADDRESS:    usize = 0x45000000;
-pub const KERNELCPU_PAYLOAD_ADDRESS: usize = 0x45060000;
+pub const KERNELCPU_PAYLOAD_ADDRESS: usize = 0x45070000;
 pub const KERNELCPU_LAST_ADDRESS:    usize = 0x4fffffff;
 pub const KSUPPORT_HEADER_SIZE:      usize = 0x80;
 

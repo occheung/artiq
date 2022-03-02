@@ -68,23 +68,8 @@ fn grabber_thread(io: sched::Io) {
 }
 
 fn setup_log_levels() {
-    match config::read_str("log_level", |r| r.map(|s| s.parse())) {
-        Ok(Ok(log_level_filter)) => {
-            info!("log level set to {} by `log_level` config key",
-                  log_level_filter);
-            log::set_max_level(log_level_filter);
-        }
-        _ => info!("log level set to INFO by default")
-    }
-    match config::read_str("uart_log_level", |r| r.map(|s| s.parse())) {
-        Ok(Ok(uart_log_level_filter)) => {
-            info!("UART log level set to {} by `uart_log_level` config key",
-                  uart_log_level_filter);
-            logger_artiq::BufferLogger::with(|logger|
-                logger.set_uart_log_level(uart_log_level_filter));
-        }
-        _ => info!("UART log level set to INFO by default")
-    }
+    log::set_max_level(log::LevelFilter::Trace);
+    logger_artiq::BufferLogger::with(|logger| logger.set_uart_log_level(log::LevelFilter::Trace));
 }
 
 fn startup() {

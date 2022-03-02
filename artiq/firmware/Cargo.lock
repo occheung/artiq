@@ -132,6 +132,9 @@ checksum = "0f8cb7306107e4b10e64994de6d3274bd08996a7c1322a27b86482392f96be0a"
 [[package]]
 name = "dyld"
 version = "0.0.0"
+dependencies = [
+ "byteorder",
+]
 
 [[package]]
 name = "eh"
