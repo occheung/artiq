@@ -301,6 +301,43 @@ class TTLInOut:
         return now_mu()
 
     @kernel
+    def gate_rising_till_received(self):
+        """Register rising edge events for the specified duration
+        (in seconds).
+
+        The time cursor is advanced by the specified duration.
+
+        :return: The timeline cursor at the end of the gate window, for
+            convenience when used with :meth:`count`/:meth:`timestamp_mu`.
+        """
+        self._set_sensitivity(1)
+
+    @kernel
+    def gate_rising_till_received(self):
+        """Register falling edge events for the specified duration
+        (in seconds).
+
+        The time cursor is advanced by the specified duration.
+
+        :return: The timeline cursor at the end of the gate window, for
+            convenience when used with :meth:`count`/:meth:`timestamp_mu`.
+
+        """
+        self._set_sensitivity(2)
+
+    @kernel
+    def gate_both_till_received(self):
+        """Register both rising and falling edge events for the specified
+        duration (in seconds).
+
+        The time cursor is advanced by the specified duration.
+
+        :return: The timeline cursor at the end of the gate window, for
+            convenience when used with :meth:`count`/:meth:`timestamp_mu`.
+        """
+        self._set_sensitivity(3)
+
+    @kernel
     def count(self, up_to_timestamp_mu):
         """Consume RTIO input events until the hardware timestamp counter has
         reached the specified timestamp and return the number of observed
