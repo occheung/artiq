@@ -59,7 +59,7 @@ class InOut(Module):
         serdes_width = len(serdes.o)
         assert len(serdes.i) == serdes_width
         self.rtlink = rtlink.Interface(
-            rtlink.OInterface(2, 2, fine_ts_width=log2_int(serdes_width)),
+            rtlink.OInterface(2, 3, fine_ts_width=log2_int(serdes_width)),
             rtlink.IInterface(1, fine_ts_width=log2_int(serdes_width)))
         self.probes = [serdes.i[-1], serdes.oe]
         override_en = Signal()
@@ -98,12 +98,16 @@ class InOut(Module):
 
         # Input
         sensitivity = Signal(2)
+        autoclear = Signal()
         sample = Signal()
         self.sync.rio += [
             sample.eq(0),
             If(self.rtlink.o.stb & self.rtlink.o.address[1],
                 sensitivity.eq(self.rtlink.o.data),
                 If(self.rtlink.o.address[0], sample.eq(1))
+            ),
+            If(self.rtlink.o.stb & (self.rtlink.o.address == 4),
+                autoclear.eq(self.rtlink.o.data[0])
             )
         ]
 
@@ -124,4 +128,10 @@ class InOut(Module):
         self.sync.rio_phy += [
             self.rtlink.i.fine_ts.eq(pe.o),
             self.rtlink.i.stb.eq(sample | ~pe.n),
+        ]
+
+        self.sync.rio += [
+            If((~pe.n) & autoclear,
+                sensitivity.eq(0)
+            )
         ]
