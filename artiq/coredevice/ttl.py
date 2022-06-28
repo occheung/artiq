@@ -20,6 +20,7 @@ from artiq.coredevice.exceptions import RTIOOverflow
 # 1 Output enable
 # 2 Set input sensitivity
 # 3 Set input sensitivity and sample
+# 4 Set input gate autoclear
 
 
 class TTLOut:
@@ -127,6 +128,7 @@ class TTLInOut:
         self.target_oe     = (channel << 8) + 1
         self.target_sens   = (channel << 8) + 2
         self.target_sample = (channel << 8) + 3
+        self.target_autoclear = (channel << 8) + 4
 
     @kernel
     def set_oe(self, oe):
@@ -444,6 +446,10 @@ class TTLInOut:
             success = False
         return success
 
+    # Input API: Autoclear input gate
+    @kernel
+    def autoclear_input(self, ac):
+        rtio_output(self.target_autoclear, 1 if ac else 0)
 
 class TTLClockGen:
     """RTIO TTL clock generator driver.
