@@ -231,13 +231,15 @@ class PeripheralManager:
                     "sync_device": {sync_device},
                     "io_update_device": "ttl_{name}_io_update",
                     "refclk": {refclk},
-                    "clk_sel": {clk_sel}
+                    "clk_sel": {clk_sel},
+                    "sync_div": {sync_div},
                 }}
             }}""",
             name=urukul_name,
             sync_device="\"ttl_{name}_sync\"".format(name=urukul_name) if synchronization else "None",
             refclk=peripheral.get("refclk", self.master_description["rtio_frequency"]),
-            clk_sel=peripheral["clk_sel"])
+            clk_sel=peripheral["clk_sel"],
+            sync_div=peripheral.get("sync_div", None))
         dds = peripheral["dds"]
         pll_vco = peripheral.get("pll_vco")
         for i in range(4):

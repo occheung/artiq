@@ -299,6 +299,9 @@
                             "minimum": 0,
                             "maximum": 3
                         },
+                        "sync_div": {
+                            "type": "integer"
+                        },
                         "pll_n": {
                             "type": "integer"
                         },
