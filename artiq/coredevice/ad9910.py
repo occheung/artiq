@@ -1,4 +1,5 @@
 from numpy import int32, int64
+from fractions import Fraction
 
 from artiq.language.core import (
     kernel, delay, portable, delay_mu, now_mu, at_mu)
@@ -143,7 +144,7 @@ class AD9910:
                  io_update_delay=0, pll_en=1):
         self.kernel_invariants = {"cpld", "core", "bus", "chip_select",
                                   "pll_en", "pll_n", "pll_vco", "pll_cp",
-                                  "ftw_per_hz", "sysclk_per_mu", "sysclk",
+                                  "ftw_per_hz", "sysclk_per_mu_ratio", "sysclk",
                                   "sync_data"}
         self.cpld = dmgr.get(cpld_device)
         self.core = self.cpld.core
@@ -171,7 +172,7 @@ class AD9910:
             sysclk = clk
         assert sysclk <= 1e9
         self.ftw_per_hz = (1 << 32) / sysclk
-        self.sysclk_per_mu = int(round(sysclk * self.core.ref_period))
+        self.sysclk_per_mu_ratio = list(Fraction.from_float(sysclk * self.core.ref_period).as_integer_ratio())
         self.sysclk = sysclk
 
         if isinstance(sync_delay_seed, str) or isinstance(io_update_delay,
@@ -465,7 +466,8 @@ class AD9910:
         if self.sync_data.sync_delay_seed >= 0 and not self.cpld.sync_div:
             raise ValueError("parent cpld does not drive SYNC")
         if self.sync_data.sync_delay_seed >= 0:
-            if self.sysclk_per_mu != self.sysclk * self.core.ref_period:
+            sysclk_per_mu = self.sysclk_per_mu_ratio[0] / self.sysclk_per_mu_ratio[1]
+            if sysclk_per_mu != self.sysclk * self.core.ref_period:
                 raise ValueError("incorrect clock ratio for synchronization")
         delay(50 * ms)  # slack
 
@@ -571,8 +573,8 @@ class AD9910:
                 # 32 LSB are sufficient.
                 # Also no need to use IO_UPDATE time as this
                 # is equivalent to an output pipeline latency.
-                dt = int32(now_mu()) - int32(ref_time_mu)
-                pow_ += dt * ftw * self.sysclk_per_mu >> 16
+                dt = now_mu() - ref_time_mu
+                pow_ += int32(dt * int64(ftw) * int64(self.sysclk_per_mu_ratio[0]) // int64(self.sysclk_per_mu_ratio[1]) >> 16)
         if ram_destination == -1:
             self.write64(_AD9910_REG_PROFILE0 + profile,
                          (asf << 16) | (pow_ & 0xffff), ftw)
@@ -1096,7 +1098,7 @@ class AD9910:
         :return: Stable IO_UPDATE delay to be passed to the constructor
             :class:`AD9910` via the device database.
         """
-        period = self.sysclk_per_mu * 4  # SYNC_CLK period
+        period = int64(4 * self.sysclk_per_mu_ratio[1] // self.sysclk_per_mu_ratio[0])  # Machine unit per SYNC_CLK period
         repeat = 100
         for i in range(period):
             t = 0
