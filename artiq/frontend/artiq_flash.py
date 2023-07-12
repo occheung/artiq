@@ -59,7 +59,11 @@ Prerequisites:
                         help="SSH host to jump through")
     parser.add_argument("-t", "--target", default="kasli",
                         help="target board, default: %(default)s, one of: "
+<<<<<<< HEAD
                              "kasli efc kc705")
+=======
+                             "kasli kc705 efc")
+>>>>>>> 936f24f6b (artiq_flash: support efc)
     parser.add_argument("-I", "--preinit-command", default=[], action="append",
                         help="add a pre-initialization OpenOCD command. "
                              "Useful for selecting a board when several are connected.")
@@ -219,6 +223,7 @@ class ProgrammerXC7(Programmer):
             add_commands(self._board_script,
                 "source {boardfile}",
                 boardfile=self._transfer_script("board/{}.cfg".format(board)))
+<<<<<<< HEAD
         else:
             add_commands(self._board_script,
                 # OpenOCD does not have the efc board file so custom script is included.
@@ -238,6 +243,14 @@ class ProgrammerXC7(Programmer):
                 "source [find fpga/xilinx-dna.cfg]"
             )
         self.add_flash_bank("spi0", "xc7", index=0)
+=======
+            self.add_flash_bank("spi0", "xc7", index=0)
+        else:
+            add_commands(self._board_script,
+                "source efc.cfg"
+            )
+            self.add_flash_bank("spi0", "xc7", index=0)
+>>>>>>> 936f24f6b (artiq_flash: support efc)
 
         add_commands(self._script, "xadc_report xc7.tap")
 
