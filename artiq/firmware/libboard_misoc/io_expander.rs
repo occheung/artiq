@@ -83,8 +83,13 @@ impl IoExpander {
 
     #[cfg(soc_platform = "efc")]
     pub fn new() -> Result<Self, &'static str> {
+<<<<<<< HEAD
         // TODO: Put Virtual User LEDs L0 L1 in gateware
         const VIRTUAL_LED_MAPPING: [(u8, u8, u8); 2] = [(0, 0, 5), (1, 0, 6)];
+=======
+        // TODO: Actually put VirtualLEDs in gateware
+        const VIRTUAL_LED_MAPPING: [(u8, u8, u8); 3] = [(0, 0, 5), (1, 0, 6), (2, 0, 7)];
+>>>>>>> c28740704 (io_expander: support efc)
 
         let mut io_expander = IoExpander {
             busno: 0,
@@ -102,8 +107,24 @@ impl IoExpander {
             },
         };
         if !io_expander.check_ack()? {
+<<<<<<< HEAD
             return Err("MCP23017 io expander not found.");
         };
+=======
+            #[cfg(feature = "log")]
+            log::info!("MCP23017 io expander not found. Checking for PCA9539.");
+            io_expander.address += 0xa8; // translate to PCA9539 addresses (see schematic)
+            io_expander.registers = Registers {
+                iodira: 0x06,
+                iodirb: 0x07,
+                gpioa: 0x02,
+                gpiob: 0x03,
+            };
+            if !io_expander.check_ack()? {
+                return Err("Neither MCP23017 nor PCA9539 io expander found.");
+            };
+        }
+>>>>>>> c28740704 (io_expander: support efc)
         Ok(io_expander)
     }
 
