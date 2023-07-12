@@ -461,6 +461,7 @@ const SI5324_SETTINGS: si5324::FrequencySettings
     crystal_as_ckin2: true
 };
 
+#[cfg(not(soc_platform = "efc"))]
 fn sysclk_setup() {
     let switched = unsafe {
         csr::crg::switch_done_read()
@@ -480,6 +481,48 @@ fn sysclk_setup() {
         }
         loop {}
     }
+}
+
+
+#[cfg(soc_platform = "efc")]
+fn sysclk_setup() -> board_misoc::io_expander::IoExpander {
+    let mut io_expander = board_misoc::io_expander::IoExpander::new().unwrap();
+
+    // Avoid setting up clock before the master clock is stable
+    unsafe {
+        while csr::eem_transceiver::aux_mst_clk_rdy_in_read() == 0 {
+            clock::spin_us(1_000_000);
+            println!("Master clock not ready...");
+        }
+    }
+    println!("Master clock ready!");
+
+    // Skip intialization if it had reset
+    if (unsafe { csr::crg::had_clk_switch_read() } != 0) {
+        io_expander.set(0, 3, false);
+        io_expander.set(0, 2, true);
+        return io_expander;
+    }
+
+    io_expander.init().expect("I2C I/O expander #0 initialization failed");
+
+    // Latch in the logic signal before enabling
+    io_expander.set(0, 3, false);
+    io_expander.set(0, 2, true);
+    io_expander.service().unwrap();
+    println!("Serviced I/O expander.");
+
+    // Changing output direction of the I/O expander
+    // will immediately update clock source, which may trigger reboot
+    // So, notify the gateware a clock switch request in advance
+    unsafe {
+        csr::crg::switched_clk_write(1);
+    }
+    io_expander.set_oe(0, 1 << 2 | 1 << 3);
+
+    loop {}
+
+    unreachable!()
 }
 
 
@@ -527,6 +570,7 @@ pub extern fn main() -> i32 {
         io_expander1.service().unwrap();
     }
 
+    #[cfg(not(soc_platform = "efc"))]
     sysclk_setup();
 
     #[cfg(soc_platform = "efc")]
