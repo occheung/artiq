@@ -87,14 +87,14 @@ class SatelliteBase(BaseSoC):
         platform.add_extension(shuttler.fmc_adapter_io)
 
         eem_data = 1
-        eem_aux = 0
-        self.platform.add_extension(eem.FMCCarrier.io(eem_data, eem_aux, role="satellite"))
+        self.platform.add_extension(eem.FMCCarrier.io(eem_data, role="satellite"))
 
         # Disable SERVMOD, hardwire it to ground to enable EEM
         servmod = self.platform.request("servmod")
         self.comb += servmod.eq(0)
 
-        self.submodules.eem_transceiver = eem_serdes.EEMSerdes(self.platform, eem_data, eem_aux, role="satellite")
+        self.submodules.eem_transceiver = eem_serdes.EEMSerdes(
+            self.platform, eem_data, role="satellite")
         self.csr_devices.append("eem_transceiver")
         self.config["HAS_DRTIO_EEM"] = None
 

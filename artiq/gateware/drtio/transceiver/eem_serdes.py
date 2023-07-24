@@ -511,7 +511,7 @@ layout = [
 
 
 class EEMSerdes(Module, TransceiverInterface):    
-    def __init__(self, platform, eem, eem_aux, role="master", start_idx=0):
+    def __init__(self, platform, eem, role="master", start_idx=0):
         self.rx_ready = CSRStorage()
         self.eem_sys_rst = Signal()
 
@@ -527,13 +527,6 @@ class EEMSerdes(Module, TransceiverInterface):
         phase = Signal()
         self.sync.eem_sys += phase.eq(~phase)
         self.submodules.serdes = SerdesSingle(i_pads, o_pads)
-        self.submodules.aux = EEMAux(platform, eem_aux, role=role)
-
-        if role == "master":
-            self.comb += self.aux.phase.eq(phase)
-        else:
-            # self.sync.eem_sys += If(self.aux.phase_rst, phase.eq(0))
-            pass
 
         self.comb += self.serdes.phase.eq(phase)
         
@@ -547,37 +540,3 @@ class EEMSerdes(Module, TransceiverInterface):
             getattr(self, "cd_rtio_rx" + str(start_idx)).clk.eq(ClockSignal("eem_sys")),
             getattr(self, "cd_rtio_rx" + str(start_idx)).rst.eq(ResetSignal("eem_sys"))
         ]
-
-
-class EEMAux(Module, AutoCSR):
-    def __init__(self, platform, eem_aux, role="master"):
-        for name, _, src in layout:
-            aux_sig = Signal()
-            pad = platform.request(("eem{}_fmc_"+name).format(eem_aux))
-            if src == role:
-                self.specials += DifferentialOutput(aux_sig, pad.p, pad.n)
-            else:
-                self.specials += DifferentialInput(pad.p, pad.n, aux_sig)
-
-            if name == "sat_rst":
-                if role == "master":
-                    self.sat_phase_rst = CSR()
-                    self.phase = Signal()
-
-                    phase_rst_r = Signal()
-                    self.sync += [
-                        phase_rst_r.eq(self.sat_phase_rst.re),
-                        aux_sig.eq((phase_rst_r | self.sat_phase_rst.re) & self.phase),
-                    ]
-
-                else:
-                    self.phase_rst = Signal()
-                    self.phase_aligned = CSRStatus()
-                    self.specials += MultiReg(aux_sig, self.phase_rst, "eem_sys")
-                    self.sync.eem_sys += self.phase_aligned.status.eq(self.phase_rst | self.phase_aligned.status)
-            
-            else:
-                if src == role:
-                    setattr(self.submodules, name, gpio.GPIOOut(aux_sig))
-                else:
-                    setattr(self.submodules, name, gpio.GPIOIn(aux_sig))

@@ -22,7 +22,7 @@ from artiq.gateware import eem
 from artiq.gateware.drtio.transceiver import gtp_7series
 from artiq.gateware.drtio.siphaser import SiPhaser7Series
 from artiq.gateware.drtio.rx_synchronizer import XilinxRXSynchronizer
-from artiq.gateware.drtio.transceiver.eem_serdes import EEMSerdes, EEMAux
+from artiq.gateware.drtio.transceiver.eem_serdes import EEMSerdes
 from artiq.gateware.drtio import *
 from artiq.build_soc import *
 
@@ -331,11 +331,12 @@ class MasterBase(MiniSoC, AMPSoC):
 
         if efc_port_list is not None:
             for efc_ports in efc_port_list:
-                efc_data, efc_aux = efc_ports
-                self.platform.add_extension(eem.FMCCarrier.io(efc_data, efc_aux, role="master"))
+                efc_data, _efc_aux = efc_ports
+                self.platform.add_extension(eem.FMCCarrier.io(efc_data, role="master"))
+                # TODO: See the TODO in the module
                 self.submodules.eem_transceiver = EEMSerdes(
-                    self.platform, efc_data, efc_aux,
-                    role="master", start_idx=len(drtio_data_pads))
+                    self.platform, efc_data, role="master",
+                    start_idx=len(drtio_data_pads))
                 self.csr_devices.append("eem_transceiver")
 
             self.config["HAS_DRTIO_EEM"] = None

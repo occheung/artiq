@@ -762,7 +762,7 @@ class HVAmp(_EEM):
 
 class FMCCarrier(_EEM):
     @staticmethod
-    def io(eem, eem_aux, role="master", iostandard=default_iostandard):
+    def io(eem, role="master", iostandard=default_iostandard):
         # Master: Pair 0~3 data IN, 4~7 OUT
         # Satellite: Pair 0~3 data OUT, 4~7 IN
         if role not in ["master", "satellite"]:
@@ -787,20 +787,4 @@ class FMCCarrier(_EEM):
             ) for i in range(4)
         ]
 
-        def get_ext_signal_record(name, pin, output=True):
-            record = (("eem{}_fmc_"+name).format(eem_aux), 0,
-                Subsignal("p", Pins(_eem_pin(eem_aux, pin, "p"))),
-                Subsignal("n", Pins(_eem_pin(eem_aux, pin, "n"))),
-                iostandard(eem_aux),
-            )
-            
-            if not output:
-                record = record + (Misc("DIFF_TERM=TRUE"),)
-            
-            return record
-        
-        aux = [
-            get_ext_signal_record(name, pin, output=(role == src)) for name, pin, src in eem_serdes.layout
-        ]
-
-        return data_in + data_out + aux
+        return data_in + data_out
