@@ -69,65 +69,6 @@ pub fn write_config(config: &SerdesConfig) {
     }
 }
 
-unsafe fn align(eem_pair_no: usize) -> (u8, u8, u8, u8) {
-    let mut table: [[bool; 32]; 20] = [[false; 32]; 20];
-
-    select_eem_pair(eem_pair_no);
-    clock::spin_us(1);
-
-    let scan = |table: &mut[[bool; 32]]| {
-        for slip in 0..5 {
-            for delay in 0..32 {
-                apply_delay(delay);
-                clock::spin_us(1);
-
-                for odd_select in 0..2 {
-                    update_select_odd(eem_pair_no, odd_select);
-                    clock::spin_us(100);
-
-                    table[(slip * 2 + odd_select) as usize][delay as usize] = true;
-                    for _ in 0..512 {
-                        let aligned = csr::eem_transceiver::serdes_aligned_read();
-                        table[(slip * 2 + odd_select) as usize][delay as usize] &= (aligned == 1);
-                    }
-                }
-            }
-
-            apply_bitslip();
-            clock::spin_us(100);
-        }
-    };
-
-    update_invert(eem_pair_no, 0);
-    clock::spin_us(100);
-    scan(&mut table[..10]);
-    update_invert(eem_pair_no, 1);
-    clock::spin_us(100);
-    scan(&mut table[10..]);
-
-    print!("                       ");
-    for i in 0..32 {
-        print!("{}", i % 10);
-    }
-    println!("");
-
-    for (idx, dly_row) in table.iter().enumerate() {
-        let slip = (idx % 10) / 2;
-        let select_odd = idx % 2;
-        print!("Slip {:#02}, SELECT_ODD {}: ", slip, select_odd);
-        for &hit_status in dly_row {
-            if hit_status {
-                print!("*");
-            } else {
-                print!(" ");
-            }
-        }
-        println!("");
-    }
-
-    get_delay(&table)
-}
-
 // Find the appropriate delay configuration, in (select_odd, delay_tap, bitslip, flip_order)
 fn get_delay(table: &[[bool; 32]]) -> (u8, u8, u8, u8) {
     // Figure out the longest chain of hits within some bitslip & select_odd
