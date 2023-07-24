@@ -502,14 +502,6 @@ class SerdesSingle(Module, AutoCSR):
         self.specials += MultiReg(comma, self.reader.decoder_comma)
 
 
-layout = [
-    ("sat_rst",         5, "master"),
-    ("load_dly",        6, "master"),
-    ("sat_align_done",  7, "satellite"),
-    ("mst_align_done",  4, "master"),
-]
-
-
 class EEMSerdes(Module, TransceiverInterface):    
     def __init__(self, platform, eem, role="master", start_idx=0):
         self.rx_ready = CSRStorage()
