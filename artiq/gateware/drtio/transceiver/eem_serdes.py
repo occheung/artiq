@@ -17,6 +17,7 @@ class RXPhy(Module):
 
         for i in range(4):
             self.specials += Instance("IBUFDS",
+                p_DIFF_TERM="TRUE",
                 i_I=i_pads[i].p,
                 i_IB=i_pads[i].n,
                 o_O=self.o[i],
