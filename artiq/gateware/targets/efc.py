@@ -93,7 +93,7 @@ class SatelliteBase(BaseSoC):
         self.comb += servmod.eq(0)
 
         self.submodules.eem_transceiver = eem_serdes.EEMSerdes(
-            self.platform, eem_data, role="satellite")
+            self.platform, 0, role="satellite")
         self.csr_devices.append("eem_transceiver")
         self.config["HAS_DRTIO_EEM"] = None
 
