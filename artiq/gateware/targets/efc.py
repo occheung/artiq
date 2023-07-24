@@ -86,8 +86,7 @@ class SatelliteBase(BaseSoC):
         platform = self.platform
         platform.add_extension(shuttler.fmc_adapter_io)
 
-        eem_data = 1
-        self.platform.add_extension(eem.FMCCarrier.io(eem_data, role="satellite"))
+        self.platform.add_extension(eem.FMCCarrier.io(0, role="satellite"))
 
         # Disable SERVMOD, hardwire it to ground to enable EEM
         servmod = self.platform.request("servmod")
