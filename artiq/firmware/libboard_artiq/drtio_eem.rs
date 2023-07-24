@@ -216,6 +216,7 @@ pub unsafe fn assign_delay() -> SerdesConfig {
     let mut start_search_idx = 0;
     loop {
         if let Some(range) = get_rising_slope(&table[start_search_idx..]) {
+            println!("Found delay tap range: {:?}", &range);
             if (range.start + start_search_idx) < 5 {
                 // The same edge may not appear in other lanes
                 start_search_idx += range.end;
@@ -289,7 +290,7 @@ pub unsafe fn assign_bitslip() {
         clock::spin_us(100);
 
         csr::eem_transceiver::serdes_reader_reset_write(1);
-        clock::spin_us(1_000);
+        clock::spin_us(100);
 
         if csr::eem_transceiver::serdes_reader_comma_read() == 1 {
             bitslip = slip;
