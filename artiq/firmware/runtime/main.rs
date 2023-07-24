@@ -129,8 +129,6 @@ fn startup() {
 
     #[cfg(has_drtio_eem)]
     unsafe {
-        csr::eem_transceiver::serdes_send_align_write(0);
-
         config::read("eem_drtio_delay", |r| {
             match r {
                 Ok(record) => {

@@ -162,9 +162,6 @@ class MultiEncoder(Module):
         self.d = [Signal(8) for _ in range(WORDS)]
         self.k = [Signal() for _ in range(WORDS)]
 
-        # Alignment control: Keep sending K.28.5
-        self.align = Signal()
-
         # Output interface is simplified because we have custom physical layer
         self.output = [Signal(10) for _ in range(WORDS)]
 
@@ -184,13 +181,8 @@ class MultiEncoder(Module):
         for d, k, output, output_buf, disp_buf, encoder in \
                 zip(self.d, self.k, self.output, output_bufs, disp_bufs, encoders):
             self.comb += [
-                If(self.align,
-                    encoder.d.eq(0xBC),
-                    encoder.k.eq(1),
-                ).Else(
-                    encoder.d.eq(d),
-                    encoder.k.eq(k),
-                ),
+                encoder.d.eq(d),
+                encoder.k.eq(k),
 
                 # Implementing switching crossbar
                 If(self.phase,
@@ -439,10 +431,6 @@ class SerdesSingle(Module, AutoCSR):
             decoders[i//2].raw_input[i%2].eq(decimated_rxdata[i]) for i in range(4)
         ]
 
-        # Always send out K.28.5 if not aligned
-        self.send_align = CSRStorage(reset=1)
-        self.specials += MultiReg(self.send_align.storage, self.encoder.align, "eem_sys")
-
         # Alternate phase
         self.phase = Signal()
         # Assign to encoder and decoder
@@ -453,8 +441,6 @@ class SerdesSingle(Module, AutoCSR):
         ]
 
         # Interleave data/ctrl update
-        self.read_word = CSRStorage(2)
-        self.aligned = CSRStatus()
 
         rx_d = Signal(8)
         rx_k = Signal()
@@ -473,13 +459,6 @@ class SerdesSingle(Module, AutoCSR):
                 rx_k_prev.eq(rx_k),
             )
         ]
-
-        found_align_symbol = Signal()
-        self.comb += found_align_symbol.eq(
-            (rx_d == 0xBC) & (rx_d_prev == 0xBC)
-            & (rx_k == 1) & (rx_k_prev == 1))
-        
-        self.specials += MultiReg(found_align_symbol, self.aligned.status)
 
         # Read rxdata for rising edge alignment
         self.submodules.counter = RisingEdgeCounter()
