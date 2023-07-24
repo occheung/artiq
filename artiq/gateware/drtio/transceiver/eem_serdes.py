@@ -2,10 +2,13 @@ from migen import *
 from migen.genlib.cdc import MultiReg
 from migen.genlib.io import DifferentialInput, DifferentialOutput
 from migen.genlib.fifo import AsyncFIFO
+from migen.genlib.misc import WaitTimer
 from misoc.cores import gpio
 from misoc.interconnect.csr import *
 from misoc.cores.code_8b10b import SingleEncoder, Decoder
 from artiq.gateware.drtio.core import TransceiverInterface, ChannelInterface
+
+from operator import add
 
 
 class RXPhy(Module):
@@ -266,6 +269,92 @@ class CrossbarDecoder(Module):
         ]
 
 
+class RisingEdgeDetector(Module):
+    def __init__(self):
+        self.s = Signal(3)
+
+        self.high = Signal()
+        self.low = Signal()
+
+        self.comb += If(~self.s[0] & self.s[2],
+            self.high.eq(self.s[1]),
+            self.low.eq(~self.s[1]),
+        ).Else(
+            self.high.eq(0),
+            self.low.eq(0),
+        )
+
+
+class RisingEdgeCounter(Module, AutoCSR):
+    def __init__(self):
+        self.high_count = CSRStatus(22)
+        self.low_count = CSRStatus(22)
+
+        # Odd indices are always oversampled bits
+        self.rxdata = Signal(10)
+        rxdata_r = Signal(10)
+        self.specials += MultiReg(self.rxdata, rxdata_r)
+
+        # Record the last 2 bits (MSb)
+        rxdata_prev_r = Signal(2)
+        self.sync += rxdata_prev_r.eq(rxdata_r[8:])
+
+        # Detect rising edges & measure
+        detectors = [ RisingEdgeDetector() for _ in range(5) ]
+        self.submodules += detectors
+
+        samples = Signal(12)
+        self.comb += samples.eq(Cat(rxdata_prev_r, rxdata_r))
+
+        self.comb += [
+            detectors[i].s.eq(samples[i*2:(i*2)+3]) for i in range(5)
+        ]
+
+        high = [ detector.high for detector in detectors ]
+        low = [ detector.low for detector in detectors ]
+
+        self.reset = CSR()
+        self.done = CSRStatus()
+
+        self.submodules.timer = WaitTimer(125000)
+
+        self.comb += [
+            self.timer.wait.eq(~self.reset.re),
+            self.done.status.eq(self.timer.done),
+        ]
+
+        self.sync += [
+            If(self.reset.re,
+                self.high_count.status.eq(0),
+                self.low_count.status.eq(0),
+            ).Elif(~self.timer.done,
+                If(~self.high_count.status[21],
+                    self.high_count.status.eq(
+                        self.high_count.status + reduce(add, high),
+                    )
+                ),
+                If(~self.low_count.status[21],
+                    self.low_count.status.eq(
+                        self.low_count.status + reduce(add, low),
+                    )
+                ),
+            )
+        ]
+
+
+class CommaReader(Module, AutoCSR):
+    def __init__(self):
+        self.decoder_comma = Signal()
+        self.reset = CSR()
+        self.comma = CSRStatus()
+
+        self.sync += If(self.reset.re,
+            self.comma.status.eq(0),
+        ).Else(
+            self.comma.status.eq(self.comma.status | self.decoder_comma),
+        )
+
+
 class SerdesSingle(Module, AutoCSR):
     def __init__(self, i_pads, o_pads, debug=False):
         # Modules for the IOB
@@ -392,6 +481,26 @@ class SerdesSingle(Module, AutoCSR):
         
         self.specials += MultiReg(found_align_symbol, self.aligned.status)
 
+        # Read rxdata for rising edge alignment
+        self.submodules.counter = RisingEdgeCounter()
+        edge_bit_buffer = Signal()
+
+        self.comb += Case(eem_sel_cdc, {
+            lane_idx: self.counter.rxdata.eq(Mux(select_odd_cdc[lane_idx],
+                Cat(edge_bit_buffer, self.rx_serdes.rxdata[lane_idx][:9]),
+                self.rx_serdes.rxdata[lane_idx]
+            )) for lane_idx in range(4)
+        })
+        self.sync.eem_sys += Case(eem_sel_cdc, {
+            lane_idx: edge_bit_buffer.eq(self.rx_serdes.rxdata[lane_idx][-1]) for lane_idx in range(4)
+        })
+
+        # Pass decoded characters for bitslip alignment
+        self.submodules.reader = CommaReader()
+        comma = Signal()
+        self.comb += comma.eq(((rx_d == 0x3C) | (rx_d == 0xBC)) & rx_k)
+        self.specials += MultiReg(comma, self.reader.decoder_comma)
+
 
 layout = [
     ("sat_rst",         5, "master"),
@@ -423,7 +532,8 @@ class EEMSerdes(Module, TransceiverInterface):
         if role == "master":
             self.comb += self.aux.phase.eq(phase)
         else:
-            self.sync.eem_sys += If(self.aux.phase_rst, phase.eq(0))
+            # self.sync.eem_sys += If(self.aux.phase_rst, phase.eq(0))
+            pass
 
         self.comb += self.serdes.phase.eq(phase)
         

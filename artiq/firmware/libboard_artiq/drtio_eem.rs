@@ -1,12 +1,11 @@
 use board_misoc::{csr, ident, clock, uart_logger, i2c, pmp};
+use core::ops::Range;
 
 
 #[derive(Debug)]
 pub struct SerdesConfig {
-    select_odd: u8,
-    decoder_invert: u8,
-    delay: [u8; 4],
-    bitslip: [u8; 4],
+    pub select_odd: u8,
+    pub delay: [u8; 4],
 }
 
 impl SerdesConfig {
@@ -17,32 +16,6 @@ impl SerdesConfig {
                 core::mem::size_of::<SerdesConfig>(),
             )
         }
-    }
-}
-
-pub fn align_eem() -> SerdesConfig {
-    let mut delay_confs: [(u8, u8, u8, u8); 4] = Default::default();
-
-    for eem_pair_no in 0..4 {
-        delay_confs[eem_pair_no] = unsafe { align(eem_pair_no) };
-    }
-
-    let mut select_odd = 0;
-    let mut decoder_invert = 0;
-    let mut delay = [0; 4];
-    let mut bitslip = [0; 4];
-    for (eem_pair_no, (select_odd_idx, dly, slip, invert)) in delay_confs.iter().enumerate() {
-        select_odd |= (select_odd_idx << eem_pair_no);
-        delay[eem_pair_no] = *dly;
-        bitslip[eem_pair_no] = *slip;
-        decoder_invert |= (invert << eem_pair_no);
-    }
-
-    SerdesConfig {
-        select_odd,
-        decoder_invert,
-        delay,
-        bitslip,
     }
 }
 
@@ -87,17 +60,12 @@ fn apply_delay(tap: u8) {
 
 pub fn write_config(config: &SerdesConfig) {
     unsafe {
-        csr::eem_transceiver::serdes_decoder_dly_write(config.decoder_invert as u8);
         csr::eem_transceiver::serdes_select_odd_write(config.select_odd as u8);
     }
 
     for eem_pair_no in 0..4 {
         select_eem_pair(eem_pair_no);
         apply_delay(config.delay[eem_pair_no]);
-
-        for _ in 0..config.bitslip[eem_pair_no] {
-            apply_bitslip();
-        }
     }
 }
 
@@ -192,4 +160,155 @@ fn get_delay(table: &[[bool; 32]]) -> (u8, u8, u8, u8) {
     }
 
     (slip as u8 % 2, tap as u8, (slip as u8 % 10) / 2, slip as u8 / 10)
+}
+
+pub unsafe fn assign_delay() -> SerdesConfig {
+    let mut table: [f64; 32] = [0.0; 32];
+
+    // Select an appropriate delay for EEM lane 0
+    select_eem_pair(0);
+
+    let read_align = |dly: u8| -> f64 {
+        apply_delay(dly);
+        csr::eem_transceiver::serdes_counter_reset_write(1);
+            
+        while csr::eem_transceiver::serdes_counter_done_read() == 0 {}
+
+        let (high, low) = (
+            csr::eem_transceiver::serdes_counter_high_count_read(),
+            csr::eem_transceiver::serdes_counter_low_count_read(),
+        );
+
+        (low as f64) / ((high + low) as f64)
+    };
+
+    let fill_align_table = |table: &mut [f64]| {
+        for delay in 0..32 {
+            table[delay as usize] = read_align(delay);
+        }
+    };
+
+    update_select_odd(0, 0);
+    fill_align_table(&mut table);
+
+    for (delay, low_rate) in table.iter().enumerate() {
+        println!("{:#02}: {:#010}", delay, low_rate);
+    }
+
+    let get_rising_slope = |table: &[f64]| -> Option<Range<usize>> {
+        let mut begin = None;
+        for (tap, low_rate) in table.iter().enumerate() {
+            if *low_rate < 0.1 {
+                begin.replace(tap);
+            }
+            if let Some(begin_tap) = begin {
+                if *low_rate > 0.9 {
+                    return Some(begin_tap..tap)
+                }
+            }
+        }
+
+        None
+    };
+
+    let mut min_deviation = 0.5;
+    let mut best_idx = 0;
+    let mut start_search_idx = 0;
+    loop {
+        if let Some(range) = get_rising_slope(&table[start_search_idx..]) {
+            if (range.start + start_search_idx) < 5 {
+                // The same edge may not appear in other lanes
+                start_search_idx += range.end;
+                continue;
+            }
+
+            for i in range {
+                let index = i + start_search_idx;
+                let low_rate = table[index];
+                let deviance = if low_rate > 0.5 {
+                    low_rate - 0.5
+                } else {
+                    0.5 - low_rate
+                };
+
+                if deviance < min_deviation {
+                    min_deviation = deviance;
+                    best_idx = index;
+                }
+            }
+
+            break;
+        } else {
+            panic!("No suitable delay tap alignment!")
+        }
+    }
+
+    apply_delay(best_idx as u8);
+
+    let mut delay_list = [best_idx as u8; 4];
+
+    // Assign delay for other lanes
+    for lane_no in 1..=3 {
+        select_eem_pair(lane_no);
+
+        let mut min_deviation = 0.5;
+        let mut min_idx = 0;
+        let mut start_search_idx = 0;
+        for dly_delta in -2..=2 {
+            let index = (best_idx as i8 + dly_delta) as u8;
+            let low_rate = read_align(index);
+            let deviance = if low_rate > 0.5 {
+                low_rate - 0.5
+            } else {
+                0.5 - low_rate
+            };
+
+            if deviance < min_deviation {
+                min_deviation = deviance;
+                min_idx = index;
+            }
+        }
+
+        apply_delay(min_idx);
+        delay_list[lane_no] = min_idx;
+    }
+
+    SerdesConfig {
+        select_odd: 0,
+        delay: delay_list,
+    }
+}
+
+pub unsafe fn assign_bitslip() {
+    // Assign bitslip for lane 0
+    select_eem_pair(0);
+
+    let mut bitslip = 0;
+    for slip in 0..=9 {
+        update_invert(0, slip/5);
+        clock::spin_us(100);
+
+        csr::eem_transceiver::serdes_reader_reset_write(1);
+        clock::spin_us(1_000);
+
+        if csr::eem_transceiver::serdes_reader_comma_read() == 1 {
+            bitslip = slip;
+            break;
+        } else if slip == 9 {
+            panic!("No suitable bitslip found!")
+        }
+
+        apply_bitslip();
+    }
+
+    println!("Apply {} double bitslips", bitslip);
+
+    for lane_no in 1..=3 {
+        select_eem_pair(lane_no);
+
+        update_invert(lane_no, bitslip/5);
+        for slip in 0..bitslip {
+            apply_bitslip();
+        }
+    }
 }
