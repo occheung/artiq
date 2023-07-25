@@ -1,7 +1,7 @@
 use board_misoc::{csr, clock, config};
 
 
-pub struct SerdesConfig {
+struct SerdesConfig {
     pub delay: [u8; 4],
 }
 
