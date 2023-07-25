@@ -25,9 +25,11 @@ from artiq.gateware.drtio import *
 from artiq.build_soc import *
 
 
-class SatelliteBase(BaseSoC):
+class SatelliteBase(BaseSoC, AMPSoC):
     mem_map = {
-        "drtioaux": 0x50000000,
+        "rtio":          0x20000000,
+        "drtioaux":      0x50000000,
+        "mailbox":       0x70000000
     }
     mem_map.update(BaseSoC.mem_map)
 
@@ -43,9 +45,11 @@ class SatelliteBase(BaseSoC):
                  l2_size=128*1024,
                  clk_freq=rtio_clk_freq,
                  **kwargs)
+        AMPSoC.__init__(self)
         add_identifier(self, gateware_identifier_str=gateware_identifier_str)
 
         platform = self.platform
+        self.config["DRTIO_ROLE"] = "satellite"
         platform.add_extension(shuttler.fmc_adapter_io)
 
         self.platform.add_extension(eem.FMCCarrier.io(0, role="satellite"))
@@ -128,8 +132,14 @@ class SatelliteBase(BaseSoC):
             self.submodules.rtio_moninj = rtio.MonInj(rtio_channels)
             self.csr_devices.append("rtio_moninj")
 
+        # satellite (master-controlled) RTIO
         self.submodules.local_io = SyncRTIO(self.rtio_tsc, rtio_channels, lane_count=sed_lanes)
         self.comb += self.drtiosat.async_errors.eq(self.local_io.async_errors)
+
+        # subkernel RTIO
+        self.submodules.rtio = rtio.KernelInitiator(self.rtio_tsc)
+        self.register_kernel_cpu_csrdevice("rtio")
+
         self.submodules.rtio_dma = rtio.DMA(self.get_native_sdram_if(), self.cpu_dw)
         self.csr_devices.append("rtio_dma")
         self.submodules.cri_con = rtio.CRIInterconnectShared(
