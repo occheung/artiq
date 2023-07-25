@@ -280,12 +280,14 @@ pub fn init() {
         }
     }
 
-    info!("Using internal RTIO clock");
-    unsafe {
-        csr::serdes_crg::pll_reset_write(0);
-    }
-    clock::spin_us(150);
-    if unsafe { csr::serdes_crg::pll_locked_read() == 0 } {
-        error!("EEM clock failed");
+    #[cfg(has_drtio_eem)]
+    {
+        unsafe {
+            csr::serdes_crg::mmcm_reset_write(0);
+        }
+        clock::spin_us(150);
+        if unsafe { csr::serdes_crg::mmcm_locked_read() == 0 } {
+            error!("DRTIO-over-EEM clock failed");
+        }
     }
 }
