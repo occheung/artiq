@@ -22,7 +22,7 @@ from artiq.gateware import eem
 from artiq.gateware.drtio.transceiver import gtp_7series
 from artiq.gateware.drtio.siphaser import SiPhaser7Series
 from artiq.gateware.drtio.rx_synchronizer import XilinxRXSynchronizer
-from artiq.gateware.drtio.transceiver.eem_serdes import EEMSerdes
+from artiq.gateware.drtio.transceiver import eem_serdes
 from artiq.gateware.drtio import *
 from artiq.build_soc import *
 
@@ -39,48 +39,6 @@ class SMAClkinForward(Module):
             Instance("BUFIO", i_I=sma_clkin_se, o_O=sma_clkin_buffered),
             Instance("ODDR", i_C=sma_clkin_buffered, i_CE=1, i_D1=0, i_D2=1, o_Q=cdr_clk_se),
             Instance("OBUFDS", i_I=cdr_clk_se, o_O=cdr_clk.p, o_OB=cdr_clk.n)
-        ]
-
-
-class SerdesCRG(Module, AutoCSR):
-    def __init__(self, platform, main_clk):
-        self.pll_reset = CSRStorage(reset=1)
-        self.pll_locked = CSRStatus()
-        self.clock_domains.cd_eem_sys = ClockDomain()
-        self.clock_domains.cd_eem_sys5x = ClockDomain(reset_less=True)
-
-        mmcm_fb_in = Signal()
-        mmcm_fb_out = Signal()
-        mmcm_eem_sys = Signal()
-        mmcm_eem_sys5x = Signal()
-        pll_locked = Signal()
-
-        self.specials += [
-            Instance("MMCME2_BASE",
-                p_CLKIN1_PERIOD=8.0,
-                i_CLKIN1=main_clk,
-                i_RST=self.pll_reset.storage,
-
-                i_CLKFBIN=mmcm_fb_in,
-                o_CLKFBOUT=mmcm_fb_out,
-                o_LOCKED=pll_locked,
-
-                # VCO @ 1.25GHz with MULT=10
-                p_CLKFBOUT_MULT_F=10, p_DIVCLK_DIVIDE=1,
-
-                # 125MHz
-                p_CLKOUT0_DIVIDE_F=10, p_CLKOUT0_PHASE=0.0, o_CLKOUT0=mmcm_eem_sys,
-
-                # 625MHz
-                p_CLKOUT1_DIVIDE=2, p_CLKOUT1_PHASE=0.0, o_CLKOUT1=mmcm_eem_sys5x,
-            ),
-
-            Instance("BUFG", i_I=mmcm_eem_sys, o_O=self.cd_eem_sys.clk),
-            Instance("BUFG", i_I=mmcm_eem_sys5x, o_O=self.cd_eem_sys5x.clk),
-            Instance("BUFG", i_I=mmcm_fb_out, o_O=mmcm_fb_in),
-
-            AsyncResetSynchronizer(self.cd_eem_sys, ~pll_locked),
-            MultiReg(pll_locked, self.pll_locked.status)
         ]
 
 
@@ -330,12 +288,11 @@ class MasterBase(MiniSoC, AMPSoC):
                           for i, channel in enumerate(sfp_channels)]
 
         if efc_port_list is not None:
-            for efc_ports in efc_port_list:
-                efc_data, _efc_aux = efc_ports
-                self.platform.add_extension(eem.FMCCarrier.io(efc_data, role="master"))
+            for efc_data in efc_port_list:
+                self.platform.add_extension(eem.FMCCarrier.io(efc_data[0], role="master"))
                 # TODO: See the TODO in the module
-                self.submodules.eem_transceiver = EEMSerdes(
-                    self.platform, efc_data, role="master",
+                self.submodules.eem_transceiver = eem_serdes.EEMSerdes(
+                    self.platform, efc_data[0], role="master",
                     start_idx=len(drtio_data_pads))
                 self.csr_devices.append("eem_transceiver")
 
@@ -386,7 +343,8 @@ class MasterBase(MiniSoC, AMPSoC):
         self.specials += Instance("BUFG", i_I=gtp.txoutclk, o_O=txout_buf)
         self.crg.configure(txout_buf, clk_sw=gtp.tx_init.done)
 
-        self.submodules.serdes_crg = SerdesCRG(self.platform, txout_buf)
+        self.submodules.serdes_crg = eem_serdes.SerdesCRG(
+            self.platform, txout_buf, 125e6, True)
         self.csr_devices.append("serdes_crg")
 
         platform.add_period_constraint(gtp.txoutclk, rtio_clk_period)

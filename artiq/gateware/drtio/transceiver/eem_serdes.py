@@ -1,4 +1,5 @@
 from migen import *
+from migen.genlib.resetsync import AsyncResetSynchronizer
 from migen.genlib.cdc import MultiReg
 from migen.genlib.io import DifferentialInput, DifferentialOutput
 from migen.genlib.fifo import AsyncFIFO
@@ -9,6 +10,50 @@ from misoc.cores.code_8b10b import SingleEncoder, Decoder
 from artiq.gateware.drtio.core import TransceiverInterface, ChannelInterface
 
 from operator import add
+
+
+class SerdesCRG(Module, AutoCSR):
+    def __init__(self, platform, main_clk, clk_freq, with_reset):
+        if with_reset:
+            self.mmcm_reset = CSRStorage(reset=1)
+            self.mmcm_locked = CSRStatus()
+        self.clock_domains.cd_eem_sys = ClockDomain()
+        self.clock_domains.cd_eem_sys5x = ClockDomain(reset_less=True)
+
+        eem_fb_in = Signal()
+        eem_fb_out = Signal()
+        mmcm_locked = Signal()
+        mmcm_eem_sys = Signal()
+        mmcm_eem_sys5x = Signal()
+
+        self.specials += [
+            Instance("MMCME2_BASE",
+                p_CLKIN1_PERIOD=1e9/clk_freq,
+                i_CLKIN1=main_clk,
+                i_RST=self.mmcm_reset.storage if with_reset else 0,
+
+                i_CLKFBIN=eem_fb_in,
+                o_CLKFBOUT=eem_fb_out,
+                o_LOCKED=mmcm_locked,
+
+                # VCO @ 1.25 GHz
+                p_CLKFBOUT_MULT_F=1.25e9/clk_freq, p_DIVCLK_DIVIDE=1,
+
+                # 125MHz
+                p_CLKOUT0_DIVIDE_F=10, p_CLKOUT0_PHASE=0.0, o_CLKOUT0=mmcm_eem_sys,
+
+                # 625MHz
+                p_CLKOUT1_DIVIDE=2, p_CLKOUT1_PHASE=0.0, o_CLKOUT1=mmcm_eem_sys5x,
+            ),
+            Instance("BUFG", i_I=mmcm_eem_sys, o_O=self.cd_eem_sys.clk),
+            Instance("BUFG", i_I=mmcm_eem_sys5x, o_O=self.cd_eem_sys5x.clk),
+            Instance("BUFG", i_I=eem_fb_out, o_O=eem_fb_in),
+
+            AsyncResetSynchronizer(self.cd_eem_sys, ~mmcm_locked),
+        ]
+
+        if with_reset:
+            self.specials += MultiReg(mmcm_locked, self.mmcm_locked.status)
 
 
 class RXPhy(Module):
@@ -222,7 +267,7 @@ class CrossbarDecoder(Module):
 
         self.submodules.decoder = Decoder()
 
-        # Update phase & synchronous elements
+        # Update synchronous elements
         self.sync.eem_sys += [
             If(~self.phase,
                 If(~self.delay[0],
@@ -358,7 +403,7 @@ class SerdesSingle(Module, AutoCSR):
         self.submodules.rx_serdes = RXSerdes()
         self.submodules.tx_serdes = TXSerdes()
 
-        # EEM select
+        # EEM lane select
         self.eem_sel = CSRStorage(2)
 
         # CSR for delay & bitslip
