@@ -502,7 +502,6 @@ fn sysclk_setup() -> board_misoc::io_expander::IoExpander {
     io_expander.set(0, 3, false);
     io_expander.set(0, 2, true);
     io_expander.service().unwrap();
-    println!("Serviced I/O expander.");
 
     // Changing output direction of the I/O expander
     // will immediately update clock source, which may trigger reboot
@@ -510,7 +509,7 @@ fn sysclk_setup() -> board_misoc::io_expander::IoExpander {
     unsafe {
         csr::crg::switched_clk_write(1);
     }
-    io_expander.set_oe(0, 1 << 2 | 1 << 3);
+    io_expander.set_oe(0, 1 << 2 | 1 << 3).unwrap();
 
     loop {}
 
@@ -586,7 +585,7 @@ pub extern fn main() -> i32 {
 
     #[cfg(has_drtio_eem)]
     {
-                    clock::spin_us(10_000_000);
+        clock::spin_us(10_000_000);
         drtio_eem::configure();
     }
 
