@@ -48,7 +48,7 @@ fn apply_delay(tap: u8) {
     }
 }
 
-pub fn write_config(config: &SerdesConfig) {
+fn write_config(config: &SerdesConfig) {
     for eem_pair_no in 0..4 {
         select_eem_pair(eem_pair_no);
         apply_delay(config.delay[eem_pair_no]);
@@ -63,7 +63,7 @@ fn get_deviation(low_rate: f64) -> f64 {
     }
 }
 
-pub unsafe fn assign_delay() -> SerdesConfig {
+unsafe fn assign_delay() -> SerdesConfig {
     let mut table: [f64; 32] = [0.0; 32];
 
     // Select an appropriate delay for EEM lane 0
@@ -166,7 +166,7 @@ pub unsafe fn assign_delay() -> SerdesConfig {
     }
 }
 
-pub unsafe fn assign_bitslip() {
+unsafe fn assign_bitslip() {
     // Assign bitslip for lane 0
     select_eem_pair(0);
 
