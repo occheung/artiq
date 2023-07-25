@@ -189,6 +189,7 @@ unsafe fn assign_bitslip() {
 
     debug!("Apply {} double bitslips", bitslip);
 
+    // Copy the lane 0 bitslip to all other lanes
     for lane_no in 1..=3 {
         select_eem_pair(lane_no);
 
