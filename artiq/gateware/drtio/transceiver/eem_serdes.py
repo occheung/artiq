@@ -417,19 +417,9 @@ class SerdesSingle(Module, AutoCSR):
             self.tx_serdes.txdata[3].eq(self.encoder.output[1][5:]),
         ]
 
-        # Truncate RX, controllable via CSR
-        self.select_odd = CSRStorage(4)
-        select_odd_cdc = Signal(4)
-        self.specials += MultiReg(self.select_odd.storage, select_odd_cdc, "eem_sys")
-
-        decimated_rxdata = [ Signal(5) for _ in range(4) ]
-        for i in range(4):
-            self.comb += decimated_rxdata[i].eq(Mux(select_odd_cdc[i],
-                self.rx_serdes.rxdata[i][1::2], self.rx_serdes.rxdata[i][0::2]))
-        
         # Route RXSerdes to decoder
         self.comb += [
-            decoders[i//2].raw_input[i%2].eq(decimated_rxdata[i]) for i in range(4)
+            decoders[i//2].raw_input[i%2].eq(self.rx_serdes.rxdata[i][0::2]) for i in range(4)
         ]
 
         # Alternate phase
@@ -442,37 +432,24 @@ class SerdesSingle(Module, AutoCSR):
         ]
 
         # Interleave data/ctrl update
-
         rx_d = Signal(8)
         rx_k = Signal()
-
-        rx_d_prev = Signal(8)
-        rx_k_prev = Signal()
 
         eem_sel_cdc = Signal(2)
         self.specials += MultiReg(self.eem_sel.storage, eem_sel_cdc, "eem_sys")
 
         self.sync.eem_sys += [
-            If(~self.phase ^ eem_sel_cdc[0],
-                rx_d.eq(decoders[eem_sel_cdc[1]].d),
-                rx_k.eq(decoders[eem_sel_cdc[1]].k),
-                rx_d_prev.eq(rx_d),
-                rx_k_prev.eq(rx_k),
+            If(~self.phase,
+                rx_d.eq(decoders[0].d),
+                rx_k.eq(decoders[0].k),
             )
         ]
 
         # Read rxdata for rising edge alignment
         self.submodules.counter = RisingEdgeCounter()
-        edge_bit_buffer = Signal()
 
         self.comb += Case(eem_sel_cdc, {
-            lane_idx: self.counter.rxdata.eq(Mux(select_odd_cdc[lane_idx],
-                Cat(edge_bit_buffer, self.rx_serdes.rxdata[lane_idx][:9]),
-                self.rx_serdes.rxdata[lane_idx]
-            )) for lane_idx in range(4)
-        })
-        self.sync.eem_sys += Case(eem_sel_cdc, {
-            lane_idx: edge_bit_buffer.eq(self.rx_serdes.rxdata[lane_idx][-1]) for lane_idx in range(4)
+            lane_idx: self.counter.rxdata.eq(self.rx_serdes.rxdata[lane_idx]) for lane_idx in range(4)
         })
 
         # Pass decoded characters for bitslip alignment

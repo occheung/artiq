@@ -1,10 +1,8 @@
-use board_misoc::{csr, ident, clock, uart_logger, i2c, pmp};
-use core::ops::Range;
+use board_misoc::{csr, clock};
 
 
 #[derive(Debug)]
 pub struct SerdesConfig {
-    pub select_odd: u8,
     pub delay: [u8; 4],
 }
 
@@ -25,18 +23,10 @@ fn select_eem_pair(eem_pair_no: usize) {
     }
 }
 
-fn update_select_odd(eem_pair_no: usize, select_odd: usize) {
-    let mut odd_sel_reg = unsafe { csr::eem_transceiver::serdes_select_odd_read() };
-    // Clear bit
-    odd_sel_reg &= (!(1 << eem_pair_no));
-    // Set bit if applicable
-    unsafe { csr::eem_transceiver::serdes_select_odd_write(odd_sel_reg | (select_odd << eem_pair_no) as u8) };
-}
-
 fn update_invert(eem_pair_no: usize, invert: usize) {
     let mut invert_reg = unsafe { csr::eem_transceiver::serdes_decoder_dly_read() };
     // Clear bit
-    invert_reg &= (!(1 << eem_pair_no));
+    invert_reg &= !(1 << eem_pair_no);
     // Set bit if applicable
     unsafe { csr::eem_transceiver::serdes_decoder_dly_write(invert_reg | (invert << eem_pair_no) as u8) };
 }
@@ -51,56 +41,26 @@ fn apply_bitslip() {
 fn apply_delay(tap: u8) {
     unsafe {
         csr::eem_transceiver::serdes_dly_cnt_in_write(tap);
-        // Ensure dly_cnt_in is updated before ld
-        clock::spin_us(100);
-        assert!(tap == csr::eem_transceiver::serdes_dly_cnt_in_read());
+        clock::spin_us(150);
         csr::eem_transceiver::serdes_dly_ld_write(1);
+        clock::spin_us(150);
+        assert!(tap == csr::eem_transceiver::serdes_dly_cnt_out_read());
     }
 }
 
 pub fn write_config(config: &SerdesConfig) {
-    unsafe {
-        csr::eem_transceiver::serdes_select_odd_write(config.select_odd as u8);
-    }
-
     for eem_pair_no in 0..4 {
         select_eem_pair(eem_pair_no);
         apply_delay(config.delay[eem_pair_no]);
     }
 }
 
-// Find the appropriate delay configuration, in (select_odd, delay_tap, bitslip, flip_order)
-fn get_delay(table: &[[bool; 32]]) -> (u8, u8, u8, u8) {
-    // Figure out the longest chain of hits within some bitslip & select_odd
-    let mut max = 0;
-    let mut slip = 0;
-    let mut tap = 0;
-    for (curr_idx, dly_row) in table.iter().enumerate() {
-        let mut curr_len = 0;
-        let mut first_hit = 0;
-        let mut curr_mid = 0;
-
-        for (dly_tap, dly_stat) in dly_row.iter().enumerate() {
-            if *dly_stat {
-                // Beginning of a chain of hits
-                if curr_len == 0 {
-                    first_hit = dly_tap;
-                }
-                curr_len += 1;
-                curr_mid = (dly_tap + first_hit) / 2;
-            } else {
-                curr_len = 0;
-            }
-
-            if curr_len > max {
-                max = curr_len;
-                slip = curr_idx;
-                tap = curr_mid;
-            }
-        }
+fn get_deviation(low_rate: f64) -> f64 {
+    if low_rate < 0.5 {
+        0.5 - low_rate
+    } else {
+        low_rate - 0.5
     }
-
-    (slip as u8 % 2, tap as u8, (slip as u8 % 10) / 2, slip as u8 / 10)
 }
 
 pub unsafe fn assign_delay() -> SerdesConfig {
@@ -129,22 +89,32 @@ pub unsafe fn assign_delay() -> SerdesConfig {
         }
     };
 
-    update_select_odd(0, 0);
     fill_align_table(&mut table);
 
     for (delay, low_rate) in table.iter().enumerate() {
         println!("{:#02}: {:#010}", delay, low_rate);
     }
 
-    let get_rising_slope = |table: &[f64]| -> Option<Range<usize>> {
+    let get_rising_crossover = |table: &[f64]| -> Option<(usize, usize)> {
         let mut begin = None;
+        let mut min_deviation = 0.5;
+        let mut best_idx = 0;
         for (tap, low_rate) in table.iter().enumerate() {
             if *low_rate < 0.1 {
                 begin.replace(tap);
             }
-            if let Some(begin_tap) = begin {
-                if *low_rate > 0.9 {
-                    return Some(begin_tap..tap)
+
+            if begin.is_some() {
+                let deviation = get_deviation(*low_rate);
+                if deviation < min_deviation {
+                    min_deviation = deviation;
+                    best_idx = tap;
+                }
+
+                // The ratio will not be any closer to 50% after this
+                // within the same slope
+                if *low_rate >= 0.5 {
+                    return Some((best_idx, tap))
                 }
             }
         }
@@ -152,33 +122,18 @@ pub unsafe fn assign_delay() -> SerdesConfig {
         None
     };
 
-    let mut min_deviation = 0.5;
-    let mut best_idx = 0;
+    let best_idx;
     let mut start_search_idx = 0;
     loop {
-        if let Some(range) = get_rising_slope(&table[start_search_idx..]) {
-            println!("Found delay tap range: {:?}", &range);
-            if (range.start + start_search_idx) < 5 {
-                // The same edge may not appear in other lanes
-                start_search_idx += range.end;
+        if let Some((opt_idx, end_tap)) = get_rising_crossover(&table[start_search_idx..]) {
+            println!("Found optimal index: {}", opt_idx);
+            if opt_idx < 5 {
+                // The same edge may not appear in other lanes due to skew
+                // 5 taps is very conservative, generally it is 1 or 2
+                start_search_idx += end_tap + 1;
                 continue;
             }
-
-            for i in range {
-                let index = i + start_search_idx;
-                let low_rate = table[index];
-                let deviance = if low_rate > 0.5 {
-                    low_rate - 0.5
-                } else {
-                    0.5 - low_rate
-                };
-
-                if deviance < min_deviation {
-                    min_deviation = deviance;
-                    best_idx = index;
-                }
-            }
-
+            best_idx = opt_idx + start_search_idx;
             break;
         } else {
             panic!("No suitable delay tap alignment!")
@@ -186,7 +141,6 @@ pub unsafe fn assign_delay() -> SerdesConfig {
     }
 
     apply_delay(best_idx as u8);
-
     let mut delay_list = [best_idx as u8; 4];
 
     // Assign delay for other lanes
@@ -195,18 +149,13 @@ pub unsafe fn assign_delay() -> SerdesConfig {
 
         let mut min_deviation = 0.5;
         let mut min_idx = 0;
-        let mut start_search_idx = 0;
         for dly_delta in -2..=2 {
             let index = (best_idx as i8 + dly_delta) as u8;
             let low_rate = read_align(index);
-            let deviance = if low_rate > 0.5 {
-                low_rate - 0.5
-            } else {
-                0.5 - low_rate
-            };
+            let deviation = get_deviation(low_rate);
 
-            if deviance < min_deviation {
-                min_deviation = deviance;
+            if deviation < min_deviation {
+                min_deviation = deviation;
                 min_idx = index;
             }
         }
@@ -216,7 +165,6 @@ pub unsafe fn assign_delay() -> SerdesConfig {
     }
 
     SerdesConfig {
-        select_odd: 0,
         delay: delay_list,
     }
 }
@@ -249,7 +197,7 @@ pub unsafe fn assign_bitslip() {
         select_eem_pair(lane_no);
 
         update_invert(lane_no, bitslip/5);
-        for slip in 0..bitslip {
+        for _slip in 0..bitslip {
             apply_bitslip();
         }
     }
