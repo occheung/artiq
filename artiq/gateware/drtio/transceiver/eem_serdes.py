@@ -473,7 +473,7 @@ class SerdesSingle(Module, AutoCSR):
             self.decoders[1].phase.eq(self.phase),
         ]
 
-        # Interleave data/ctrl update
+        # Monitor lane 0 decoder output for bitslip alignment
         rx_d = Signal(8)
         rx_k = Signal()
 
@@ -487,18 +487,17 @@ class SerdesSingle(Module, AutoCSR):
             )
         ]
 
+        self.submodules.reader = CommaReader()
+        comma = Signal()
+        self.comb += comma.eq(((rx_d == 0x3C) | (rx_d == 0xBC)) & rx_k)
+        self.specials += MultiReg(comma, self.reader.decoder_comma)
+
         # Read rxdata for rising edge alignment
         self.submodules.counter = RisingEdgeCounter()
 
         self.comb += Case(eem_sel_cdc, {
             lane_idx: self.counter.rxdata.eq(self.rx_serdes.rxdata[lane_idx]) for lane_idx in range(4)
         })
-
-        # Pass decoded characters for bitslip alignment
-        self.submodules.reader = CommaReader()
-        comma = Signal()
-        self.comb += comma.eq(((rx_d == 0x3C) | (rx_d == 0xBC)) & rx_k)
-        self.specials += MultiReg(comma, self.reader.decoder_comma)
 
 
 class EEMSerdes(Module, TransceiverInterface):    
