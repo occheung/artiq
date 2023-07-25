@@ -505,7 +505,7 @@ class SerdesSingle(Module, AutoCSR):
 
 
 class EEMSerdes(Module, TransceiverInterface):    
-    def __init__(self, platform, eem, role="master", start_idx=0):
+    def __init__(self, platform, eem, start_idx=0):
         self.rx_ready = CSRStorage()
         self.eem_sys_rst = Signal()
 

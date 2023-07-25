@@ -292,8 +292,7 @@ class MasterBase(MiniSoC, AMPSoC):
                 self.platform.add_extension(eem.FMCCarrier.io(efc_data[0], role="master"))
                 # TODO: See the TODO in the module
                 self.submodules.eem_transceiver = eem_serdes.EEMSerdes(
-                    self.platform, efc_data[0], role="master",
-                    start_idx=len(drtio_data_pads))
+                    self.platform, efc_data[0], start_idx=len(drtio_data_pads))
                 self.csr_devices.append("eem_transceiver")
 
             self.config["HAS_DRTIO_EEM"] = None
