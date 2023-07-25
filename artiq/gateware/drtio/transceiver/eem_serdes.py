@@ -1,10 +1,7 @@
 from migen import *
 from migen.genlib.resetsync import AsyncResetSynchronizer
 from migen.genlib.cdc import MultiReg
-from migen.genlib.io import DifferentialInput, DifferentialOutput
-from migen.genlib.fifo import AsyncFIFO
 from migen.genlib.misc import WaitTimer
-from misoc.cores import gpio
 from misoc.interconnect.csr import *
 from misoc.cores.code_8b10b import SingleEncoder, Decoder
 from artiq.gateware.drtio.core import TransceiverInterface, ChannelInterface
