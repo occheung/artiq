@@ -128,28 +128,7 @@ fn startup() {
     rtio_clocking::init();
 
     #[cfg(has_drtio_eem)]
-    unsafe {
-        config::read("eem_drtio_delay", |r| {
-            match r {
-                Ok(record) => {
-                    println!("recorded delay: {:#?}", &*(record.as_ptr() as *const drtio_eem::SerdesConfig));
-                    drtio_eem::write_config(&*(record.as_ptr() as *const drtio_eem::SerdesConfig));
-                    drtio_eem::assign_bitslip();
-                    csr::eem_transceiver::rx_ready_write(1);
-                },
-
-                Err(_) => {
-                    let config = drtio_eem::assign_delay();
-                    println!("DELAY TAP: {:#?}", config.delay);
-            
-                    drtio_eem::assign_bitslip();
-                    csr::eem_transceiver::rx_ready_write(1);
-
-                    config::write("eem_drtio_delay", config.as_bytes());
-                }
-            }
-        })
-    }
+    drtio_eem::configure();
 
     let mut net_device = unsafe { ethmac::EthernetDevice::new() };
     net_device.reset_phy_if_any();

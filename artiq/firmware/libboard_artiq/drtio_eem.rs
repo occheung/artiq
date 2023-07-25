@@ -1,4 +1,4 @@
-use board_misoc::{csr, clock};
+use board_misoc::{csr, clock, config};
 
 
 #[derive(Debug)]
@@ -91,10 +91,6 @@ pub unsafe fn assign_delay() -> SerdesConfig {
 
     fill_align_table(&mut table);
 
-    for (delay, low_rate) in table.iter().enumerate() {
-        println!("{:#02}: {:#010}", delay, low_rate);
-    }
-
     let get_rising_crossover = |table: &[f64]| -> Option<(usize, usize)> {
         let mut begin = None;
         let mut min_deviation = 0.5;
@@ -126,7 +122,6 @@ pub unsafe fn assign_delay() -> SerdesConfig {
     let mut start_search_idx = 0;
     loop {
         if let Some((opt_idx, end_tap)) = get_rising_crossover(&table[start_search_idx..]) {
-            println!("Found optimal index: {}", opt_idx);
             if opt_idx < 5 {
                 // The same edge may not appear in other lanes due to skew
                 // 5 taps is very conservative, generally it is 1 or 2
@@ -164,6 +159,8 @@ pub unsafe fn assign_delay() -> SerdesConfig {
         delay_list[lane_no] = min_idx;
     }
 
+    debug!("DRTIO-over-EEM calibration: {:?}", delay_list);
+
     SerdesConfig {
         delay: delay_list,
     }
@@ -191,7 +188,7 @@ pub unsafe fn assign_bitslip() {
         apply_bitslip();
     }
 
-    println!("Apply {} double bitslips", bitslip);
+    debug!("Apply {} double bitslips", bitslip);
 
     for lane_no in 1..=3 {
         select_eem_pair(lane_no);
@@ -200,5 +197,30 @@ pub unsafe fn assign_bitslip() {
         for _slip in 0..bitslip {
             apply_bitslip();
         }
+    }
+}
+
+pub fn configure() {
+    unsafe {
+        config::read("eem_drtio_delay", |r| {
+            match r {
+                Ok(record) => {
+                    info!("Loading DRTIO-over-EEM configuration from flash.");
+                    write_config(&*(record.as_ptr() as *const SerdesConfig));
+                    assign_bitslip();
+                    csr::eem_transceiver::rx_ready_write(1);
+                },
+
+                Err(_) => {
+                    info!("Calibrate DRTIO-over-EEM...");
+                    let config = assign_delay();
+            
+                    assign_bitslip();
+                    csr::eem_transceiver::rx_ready_write(1);
+
+                    config::write("eem_drtio_delay", config.as_bytes()).unwrap();
+                }
+            }
+        })
     }
 }

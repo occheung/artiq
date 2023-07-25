@@ -11,7 +11,7 @@ extern crate alloc;
 extern crate proto_artiq;
 
 use core::convert::TryFrom;
-use board_misoc::{csr, ident, clock, config, uart_logger, i2c, pmp};
+use board_misoc::{csr, ident, clock, uart_logger, i2c, pmp};
 #[cfg(has_si5324)]
 use board_artiq::si5324;
 use board_artiq::{spi, drtioaux};
@@ -585,29 +585,9 @@ pub extern fn main() -> i32 {
     init_rtio_crg();
 
     #[cfg(has_drtio_eem)]
-    unsafe {
-        config::read("eem_drtio_delay", |r| {
-            match r {
-                Ok(record) => {
-                    println!("recorded delay: {:#?}", &*(record.as_ptr() as *const drtio_eem::SerdesConfig));
-                    drtio_eem::write_config(&*(record.as_ptr() as *const drtio_eem::SerdesConfig));
+    {
                     clock::spin_us(10_000_000);
-                    drtio_eem::assign_bitslip();
-                    csr::eem_transceiver::rx_ready_write(1);
-                },
-
-                Err(_) => {
-                    clock::spin_us(10_000_000);
-                    let config = drtio_eem::assign_delay();
-                    println!("DELAY TAP: {:#?}", config.delay);
-            
-                    drtio_eem::assign_bitslip();
-                    csr::eem_transceiver::rx_ready_write(1);
-
-                    config::write("eem_drtio_delay", config.as_bytes());
-                }
-            }
-        })
+        drtio_eem::configure();
     }
 
     #[cfg(has_drtio_routing)]
