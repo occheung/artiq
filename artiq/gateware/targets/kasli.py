@@ -288,11 +288,16 @@ class MasterBase(MiniSoC, AMPSoC):
                           for i, channel in enumerate(sfp_channels)]
 
         if efc_port_list is not None:
+            data_pads = []
             for efc_data in efc_port_list:
-                self.platform.add_extension(eem.FMCCarrier.io(efc_data[0], role="master"))
+                self.platform.add_extension(eem.FMCCarrier.io(efc_data[0]))
+                data_pads.append((
+                    self.platform.request("eem{}_fmc_data_in".format(efc_data[0])),
+                    self.platform.request("eem{}_fmc_data_out".format(efc_data[0])),
+                ))
                 # TODO: See the TODO in the module
                 self.submodules.eem_transceiver = eem_serdes.EEMSerdes(
-                    self.platform, efc_data[0], start_idx=len(drtio_data_pads))
+                    self.platform, data_pads, start_idx=len(drtio_data_pads))
                 self.csr_devices.append("eem_transceiver")
 
             self.config["HAS_DRTIO_EEM"] = None

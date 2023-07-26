@@ -3,6 +3,7 @@
 import argparse
 
 from migen import *
+from migen.build.generic_platform import *
 
 from misoc.interconnect.csr import *
 from misoc.cores import gpio
@@ -13,7 +14,6 @@ from artiq.gateware.amp import AMPSoC
 from artiq.gateware import rtio, shuttler
 from artiq.gateware.rtio.phy import ttl_simple
 from artiq.gateware.rtio.xilinx_clocking import fix_serdes_timing_path
-from artiq.gateware import eem
 from artiq.gateware.drtio.transceiver import eem_serdes
 from artiq.gateware.drtio.rx_synchronizer import XilinxRXSynchronizer
 from artiq.gateware.drtio import *
@@ -47,13 +47,29 @@ class SatelliteBase(BaseSoC, AMPSoC):
         self.config["DRTIO_ROLE"] = "satellite"
         platform.add_extension(shuttler.fmc_adapter_io)
 
-        self.platform.add_extension(eem.FMCCarrier.io(0, role="satellite"))
+        drtio_eem_io = [
+            ("drtio_data_out", 0,
+                Subsignal("p", Pins("eem0:d0_cc_p eem0:d1_p eem0:d2_p eem0:d3_p")),
+                Subsignal("n", Pins("eem0:d0_cc_n eem0:d1_n eem0:d2_n eem0:d3_n")),
+                IOStandard("LVDS_25"),
+            ),
+            ("drtio_data_in", 0,
+                Subsignal("p", Pins("eem0:d4_p eem0:d5_p eem0:d6_p eem0:d7_p")),
+                Subsignal("n", Pins("eem0:d4_n eem0:d5_n eem0:d6_n eem0:d7_n")),
+                IOStandard("LVDS_25"), Misc("DIFF_TERM=TRUE"),
+            ),
+        ]
+
+        platform.add_extension(drtio_eem_io)
+        data_pads = [
+            (platform.request("drtio_data_in"), platform.request("drtio_data_out"))
+        ]
 
         # Disable SERVMOD, hardwire it to ground to enable EEM
         servmod = self.platform.request("servmod")
         self.comb += servmod.eq(0)
 
-        self.submodules.eem_transceiver = eem_serdes.EEMSerdes(self.platform, 0)
+        self.submodules.eem_transceiver = eem_serdes.EEMSerdes(self.platform, data_pads)
         self.csr_devices.append("eem_transceiver")
         self.config["HAS_DRTIO_EEM"] = None
 

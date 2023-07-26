@@ -60,8 +60,8 @@ class RXPhy(Module):
         for i in range(4):
             self.specials += Instance("IBUFDS",
                 p_DIFF_TERM="TRUE",
-                i_I=i_pads[i].p,
-                i_IB=i_pads[i].n,
+                i_I=i_pads.p[i],
+                i_IB=i_pads.n[i],
                 o_O=self.o[i],
             )
 
@@ -74,8 +74,8 @@ class TXPhy(Module):
         for i in range(4):
             self.specials += Instance("OBUFTDS",
                 i_I=self.i[i],
-                o_O=o_pads[i].p,
-                o_OB=o_pads[i].n,
+                o_O=o_pads.p[i],
+                o_OB=o_pads.n[i],
                 # Always chain the 3-states input to serializer
                 # Vivado will complain otherwise
                 i_T=self.t[i],
@@ -501,25 +501,16 @@ class SerdesSingle(Module, AutoCSR):
 
 
 class EEMSerdes(Module, TransceiverInterface):    
-    def __init__(self, platform, eem, start_idx=0):
+    def __init__(self, platform, data_pads, start_idx=0):
         self.rx_ready = CSRStorage()
         self.eem_sys_rst = Signal()
 
-        # Request resources
-        # TODO: Expand to support multiple EFCs
-        i_pads = [
-            platform.request("eem{}_fmc_data_in".format(eem), i) for i in range(4)
-        ]
-        o_pads = [
-            platform.request("eem{}_fmc_data_out".format(eem), i) for i in range(4)
-        ]
-
         phase = Signal()
         self.sync.eem_sys += phase.eq(~phase)
-        self.submodules.serdes = SerdesSingle(i_pads, o_pads)
 
+        self.submodules.serdes = SerdesSingle(*data_pads[0])
         self.comb += self.serdes.phase.eq(phase)
-        
+
         chan_if = ChannelInterface(self.serdes.encoder, self.serdes.decoders)
         self.comb += chan_if.rx_ready.eq(self.rx_ready.storage)
         channel_interfaces = [chan_if]
