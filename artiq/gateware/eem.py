@@ -762,29 +762,28 @@ class HVAmp(_EEM):
 
 class FMCCarrier(_EEM):
     @staticmethod
-    def io(eem, role="master", iostandard=default_iostandard):
+    def io(eem, iostandard=default_iostandard):
         # Master: Pair 0~3 data IN, 4~7 OUT
         # Satellite: Pair 0~3 data OUT, 4~7 IN
-        if role not in ["master", "satellite"]:
-            raise ValueError("Invalid role {}".format(role))
+        data_in = ("eem{}_fmc_data_in".format(eem), 0,
+            Subsignal("p", Pins("{} {} {} {}".format(*[
+                _eem_pin(eem, i, "p") for i in range(4)
+            ]))),
+            Subsignal("n", Pins("{} {} {} {}".format(*[
+                _eem_pin(eem, i, "n") for i in range(4)
+            ]))),
+            iostandard(eem),
+            Misc("DIFF_TERM=TRUE"),
+        )
 
-        in_idx_offset = 4 if role == "satellite" else 0
-        out_idx_offset = 4 if role == "master" else 0
-        data_in = [
-            ("eem{}_fmc_data_in".format(eem), i,
-                Subsignal("p", Pins(_eem_pin(eem, i+in_idx_offset, "p"))),
-                Subsignal("n", Pins(_eem_pin(eem, i+in_idx_offset, "n"))),
-                iostandard(eem),
-                Misc("DIFF_TERM=TRUE")
-            ) for i in range(4)
-        ]
+        data_out = ("eem{}_fmc_data_out".format(eem), 0,
+            Subsignal("p", Pins("{} {} {} {}".format(*[
+                _eem_pin(eem, i, "p") for i in range(4, 8)
+            ]))),
+            Subsignal("n", Pins("{} {} {} {}".format(*[
+                _eem_pin(eem, i, "n") for i in range(4, 8)
+            ]))),
+            iostandard(eem),
+        )
 
-        data_out = [
-            ("eem{}_fmc_data_out".format(eem), i,
-                Subsignal("p", Pins(_eem_pin(eem, i+out_idx_offset, "p"))),
-                Subsignal("n", Pins(_eem_pin(eem, i+out_idx_offset, "n"))),
-                iostandard(eem),
-            ) for i in range(4)
-        ]
-
-        return data_in + data_out
+        return [data_in, data_out]
