@@ -12,12 +12,14 @@ from misoc.integration.builder import builder_args, builder_argdict
 
 from artiq.gateware.amp import AMPSoC
 from artiq.gateware import rtio, shuttler
-from artiq.gateware.rtio.phy import ttl_simple
+from artiq.gateware.rtio.phy import ttl_simple, shuttler as shuttler_rtio
 from artiq.gateware.rtio.xilinx_clocking import fix_serdes_timing_path
 from artiq.gateware.drtio.transceiver import eem_serdes
 from artiq.gateware.drtio.rx_synchronizer import XilinxRXSynchronizer
 from artiq.gateware.drtio import *
 from artiq.build_soc import *
+
+from artiq.gateware.rtio.phy.pdq.pdq import Pdq
 
 
 class SatelliteBase(BaseSoC, AMPSoC):
@@ -44,7 +46,6 @@ class SatelliteBase(BaseSoC, AMPSoC):
         add_identifier(self, gateware_identifier_str=gateware_identifier_str)
 
         platform = self.platform
-        self.config["DRTIO_ROLE"] = "satellite"
         platform.add_extension(shuttler.fmc_adapter_io)
 
         drtio_eem_io = [
@@ -171,6 +172,7 @@ class Satellite(SatelliteBase):
         if hw_rev is None:
             hw_rev = "v2.0"
         SatelliteBase.__init__(self, hw_rev=hw_rev, **kwargs)
+        self.config["DRTIO_ROLE"] = "satellite"
 
         self.rtio_channels = []
         for i in range(2):
@@ -185,6 +187,34 @@ class Satellite(SatelliteBase):
                 self.comb += led.eq(1)
             else:
                 self.comb += led.eq(0)
+        
+        # Add shuttler
+        self.submodules.shuttler = ClockDomainsRenamer("rio_phy")(Pdq(self.platform))
+
+        print("SHUTTLER TRIGGER at RTIO channel 0x{:06x}".format(len(self.rtio_channels)))
+        trig_phy = shuttler_rtio.ShuttlerTrigger()
+        self.submodules += trig_phy
+        self.rtio_channels.append(rtio.Channel.from_phy(trig_phy))
+
+        print("SHUTTLER REGISTER at RTIO channel 0x{:06x}".format(len(self.rtio_channels)))
+        register_phy = shuttler_rtio.ShuttlerLaneRegister(self.shuttler.dacs, trig_phy.triggers)
+        self.submodules += register_phy
+        self.rtio_channels.append(rtio.Channel.from_phy(register_phy))
+
+        print("SHUTTLER MONITOR at RTIO channel 0x{:06x}".format(len(self.rtio_channels)))
+        mon_phy = shuttler_rtio.ShuttlerMonitor(self.shuttler.dacs)
+        self.submodules += mon_phy
+        self.rtio_channels.append(rtio.Channel.from_phy(mon_phy))
+
+        for dac in self.shuttler.dacs:
+            print("SHUTTLER MEMORY at RTIO channel 0x{:06x}".format(len(self.rtio_channels)))
+            shuttler_mem = shuttler_rtio.ShuttlerMemory(dac)
+            self.submodules += shuttler_mem
+            self.rtio_channels.append(rtio.Channel.from_phy(shuttler_mem))
+
+        self.config["HAS_RTIO_LOG"] = None
+        self.config["RTIO_LOG_CHANNEL"] = len(self.rtio_channels)
+        self.rtio_channels.append(rtio.LogChannel())
 
         self.add_rtio(self.rtio_channels)
 
