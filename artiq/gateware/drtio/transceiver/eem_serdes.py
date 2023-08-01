@@ -322,57 +322,36 @@ class RisingEdgeDetector(Module):
 
 class RisingEdgeCounter(Module, AutoCSR):
     def __init__(self):
-        self.high_count = CSRStatus(22)
-        self.low_count = CSRStatus(22)
+        self.high_count = CSRStatus(18)
+        self.low_count = CSRStatus(18)
 
         # Odd indices are always oversampled bits
         self.rxdata = Signal(10)
-        rxdata_r = Signal(10)
-        self.specials += MultiReg(self.rxdata, rxdata_r)
-
-        # Record the last 2 bits (MSb)
-        rxdata_prev_r = Signal(2)
-        self.sync += rxdata_prev_r.eq(rxdata_r[8:])
 
         # Detect rising edges & measure
-        detectors = [ RisingEdgeDetector() for _ in range(5) ]
-        self.submodules += detectors
-
-        samples = Signal(12)
-        self.comb += samples.eq(Cat(rxdata_prev_r, rxdata_r))
-
-        self.comb += [
-            detectors[i].s.eq(samples[i*2:(i*2)+3]) for i in range(5)
-        ]
-
-        high = [ detector.high for detector in detectors ]
-        low = [ detector.low for detector in detectors ]
+        self.submodules.detector = RisingEdgeDetector()
+        self.comb += self.detector.s.eq(self.rxdata[:3])
 
         self.reset = CSR()
-        self.done = CSRStatus()
+        self.enable = CSRStorage()
 
-        self.submodules.timer = WaitTimer(125000)
-
-        self.comb += [
-            self.timer.wait.eq(~self.reset.re),
-            self.done.status.eq(self.timer.done),
-        ]
+        self.overflow = CSRStatus()
+        high_carry = Signal()
+        low_carry = Signal()
 
         self.sync += [
             If(self.reset.re,
                 self.high_count.status.eq(0),
                 self.low_count.status.eq(0),
-            ).Elif(~self.timer.done,
-                If(~self.high_count.status[21],
-                    self.high_count.status.eq(
-                        self.high_count.status + reduce(add, high),
-                    )
-                ),
-                If(~self.low_count.status[21],
-                    self.low_count.status.eq(
-                        self.low_count.status + reduce(add, low),
-                    )
-                ),
+                high_carry.eq(0),
+                low_carry.eq(0),
+                self.overflow.status.eq(0),
+            ).Elif(self.enable.storage,
+                Cat(self.high_count.status, high_carry).eq(
+                    self.high_count.status + self.detector.high),
+                Cat(self.low_count.status, low_carry).eq(
+                    self.low_count.status + self.detector.low),
+                If(high_carry | low_carry, self.overflow.status.eq(1)),
             )
         ]
 

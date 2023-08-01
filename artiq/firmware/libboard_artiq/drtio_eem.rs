@@ -70,14 +70,26 @@ unsafe fn assign_delay() -> SerdesConfig {
         apply_delay(dly);
         csr::eem_transceiver::serdes_counter_reset_write(1);
             
-        while csr::eem_transceiver::serdes_counter_done_read() == 0 {}
+        csr::eem_transceiver::serdes_counter_enable_write(1);
+        clock::spin_us(5000);
+        csr::eem_transceiver::serdes_counter_enable_write(0);
 
         let (high, low) = (
             csr::eem_transceiver::serdes_counter_high_count_read(),
             csr::eem_transceiver::serdes_counter_low_count_read(),
         );
+        let overflow = csr::eem_transceiver::serdes_counter_overflow_read() == 1;
 
+        if overflow {
+            assert!(low != high);
+            if low > high {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
         (low as f64) / ((high + low) as f64)
+        }
     };
 
     let fill_align_table = |table: &mut [f64]| {
