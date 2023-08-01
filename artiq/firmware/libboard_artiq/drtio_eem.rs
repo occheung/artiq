@@ -141,7 +141,7 @@ unsafe fn assign_delay() -> SerdesConfig {
 
         let mut min_deviation = 0.5;
         let mut min_idx = 0;
-        for dly_delta in -2..=2 {
+        for dly_delta in -3..=3 {
             let index = (best_idx as i8 + dly_delta) as u8;
             let low_rate = read_align(index);
             let deviation = get_deviation(low_rate);
