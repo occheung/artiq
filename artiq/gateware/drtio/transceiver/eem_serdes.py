@@ -249,8 +249,8 @@ class CrossbarDecoder(Module):
         self.d = Signal(8)
         self.k = Signal()
 
-        # Notifier signal when group alignmnet is completed
-        self.delay = Signal(2)
+        # Signals to decide which raw input should be decoded
+        self.delay = Signal()
         self.phase = Signal()
 
         # Optional extra stage for both lanes
@@ -267,13 +267,13 @@ class CrossbarDecoder(Module):
         # Update synchronous elements
         self.sync.eem_sys += [
             If(~self.phase,
-                If(~self.delay[0],
+                If(~self.delay,
                     buffer.eq(self.raw_input[0]),
                 ).Else(
                     buffer.eq(self.delay_buf[0]),
                 )
             ).Else(
-                If(~self.delay[1],
+                If(~self.delay,
                     buffer.eq(self.raw_input[1]),
                 ).Else(
                     buffer.eq(self.delay_buf[1]),
@@ -284,13 +284,13 @@ class CrossbarDecoder(Module):
         # Send appropriate input to decoder
         self.comb += [
             If(self.phase,
-                If(~self.delay[0],
+                If(~self.delay,
                     self.decoder.input.eq(Cat(buffer, self.raw_input[0])),
                 ).Else(
                     self.decoder.input.eq(Cat(buffer, self.delay_buf[0])),
                 )
             ).Else(
-                If(~self.delay[1],
+                If(~self.delay,
                     self.decoder.input.eq(Cat(buffer, self.raw_input[1])),
                 ).Else(
                     self.decoder.input.eq(Cat(buffer, self.delay_buf[1])),
@@ -428,8 +428,8 @@ class SerdesSingle(Module, AutoCSR):
         
         # CSR for global decoding phase
         # This is to determine if this cycle should decode SERDES 0 or 1
-        self.decoder_dly = CSRStorage(4)
-        dec_dly_cdc = Signal(4)
+        self.decoder_dly = CSRStorage()
+        dec_dly_cdc = Signal()
         self.specials += MultiReg(self.decoder_dly.storage, dec_dly_cdc, "eem_sys")
 
         # Encoder/Decodfer interfaces
@@ -447,8 +447,8 @@ class SerdesSingle(Module, AutoCSR):
         
         # Control decoders phase
         self.comb += [
-            decoders[0].delay.eq(dec_dly_cdc[:2]),
-            decoders[1].delay.eq(dec_dly_cdc[2:]),
+            decoders[0].delay.eq(dec_dly_cdc),
+            decoders[1].delay.eq(dec_dly_cdc),
         ]
         
         # Route encoded symbols to TXSerdes

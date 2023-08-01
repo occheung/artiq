@@ -22,12 +22,10 @@ fn select_eem_pair(eem_pair_no: usize) {
     }
 }
 
-fn update_invert(eem_pair_no: usize, invert: usize) {
-    let mut invert_reg = unsafe { csr::eem_transceiver::serdes_decoder_dly_read() };
-    // Clear bit
-    invert_reg &= !(1 << eem_pair_no);
-    // Set bit if applicable
-    unsafe { csr::eem_transceiver::serdes_decoder_dly_write(invert_reg | (invert << eem_pair_no) as u8) };
+fn update_invert(invert: bool) {
+    unsafe {
+        csr::eem_transceiver::serdes_decoder_dly_write(invert as u8);
+    }
 }
 
 fn apply_bitslip() {
@@ -171,7 +169,7 @@ unsafe fn assign_bitslip() {
 
     let mut bitslip = 0;
     for slip in 0..=9 {
-        update_invert(0, slip/5);
+        update_invert(slip >= 5);
         clock::spin_us(100);
 
         csr::eem_transceiver::serdes_reader_reset_write(1);
@@ -193,7 +191,6 @@ unsafe fn assign_bitslip() {
     for lane_no in 1..=3 {
         select_eem_pair(lane_no);
 
-        update_invert(lane_no, bitslip/5);
         for _slip in 0..bitslip {
             apply_bitslip();
         }
