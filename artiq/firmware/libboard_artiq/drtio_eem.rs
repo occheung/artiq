@@ -68,7 +68,7 @@ unsafe fn assign_delay() -> SerdesConfig {
     let read_align = |dly: u8| -> Option<f32> {
         apply_delay(dly);
         csr::eem_transceiver::serdes_counter_reset_write(1);
-            
+
         csr::eem_transceiver::serdes_counter_enable_write(1);
         clock::spin_us(5000);
         csr::eem_transceiver::serdes_counter_enable_write(0);
@@ -98,7 +98,7 @@ unsafe fn assign_delay() -> SerdesConfig {
                         (curr_dly - 1, prev_dev)
                     } else {
                         (curr_dly, curr_dev)
-    };
+                    };
 
                     // The same edge may not appear in other lanes due to skew
                     // 5 taps is very conservative, generally it is 1 or 2
@@ -109,9 +109,9 @@ unsafe fn assign_delay() -> SerdesConfig {
                         debug!("Calibrated min deviation: {}", min_dev);
                         best_dly = Some(selected_idx);
                         break;
+                    }
                 }
             }
-        }
 
             if curr_low_rate <= 0.5 {
                 prev = Some(curr_low_rate);
@@ -135,13 +135,13 @@ unsafe fn assign_delay() -> SerdesConfig {
         for dly_delta in -3..=3 {
             let index = (best_dly as i8 + dly_delta) as u8;
             if let Some(low_rate) = read_align(index) {
-            let deviation = get_deviation(low_rate);
+                let deviation = get_deviation(low_rate);
 
-            if deviation < min_deviation {
-                min_deviation = deviation;
-                min_idx = index;
+                if deviation < min_deviation {
+                    min_deviation = deviation;
+                    min_idx = index;
+                }
             }
-        }
         }
 
         apply_delay(min_idx);
