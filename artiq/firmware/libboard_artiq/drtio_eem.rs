@@ -94,10 +94,10 @@ unsafe fn assign_delay() -> SerdesConfig {
                 if prev_low_rate <= curr_low_rate && curr_low_rate >= 0.5 {
                     let prev_dev = 0.5 - prev_low_rate;
                     let curr_dev = curr_low_rate - 0.5;
-                    let (selected_idx, min_dev) = if prev_dev < curr_dev {
-                        (curr_dly - 1, prev_dev)
+                    let selected_idx = if prev_dev < curr_dev {
+                        curr_dly - 1
                     } else {
-                        (curr_dly, curr_dev)
+                        curr_dly
                     };
 
                     // The same edge may not appear in other lanes due to skew
