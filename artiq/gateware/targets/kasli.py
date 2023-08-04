@@ -347,10 +347,6 @@ class MasterBase(MiniSoC, AMPSoC):
         self.specials += Instance("BUFG", i_I=gtp.txoutclk, o_O=txout_buf)
         self.crg.configure(txout_buf, clk_sw=gtp.tx_init.done)
 
-        self.submodules.serdes_crg = eem_serdes.SerdesCRG(
-            self.platform, txout_buf, 125e6, True)
-        self.csr_devices.append("serdes_crg")
-
         platform.add_period_constraint(gtp.txoutclk, rtio_clk_period)
         platform.add_period_constraint(gtp.rxoutclk, rtio_clk_period)
 
@@ -361,8 +357,6 @@ class MasterBase(MiniSoC, AMPSoC):
             platform.add_period_constraint(gtp.rxoutclk, rtio_clk_period)
             platform.add_false_path_constraints(
                 self.crg.cd_sys.clk, gtp.rxoutclk)
-
-        platform.add_false_path_constraint(self.crg.cd_sys.clk, self.serdes_crg.cd_eem_sys.clk)
 
         fix_serdes_timing_path(platform)
 

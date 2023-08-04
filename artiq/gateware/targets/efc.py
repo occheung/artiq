@@ -74,12 +74,6 @@ class SatelliteBase(BaseSoC, AMPSoC):
         self.csr_devices.append("eem_transceiver")
         self.config["HAS_DRTIO_EEM"] = None
 
-        self.submodules.serdes_crg = eem_serdes.SerdesCRG(
-            self.platform, self.crg.clk125_div2, 62.5e6, False)
-        self.csr_devices.append("serdes_crg")
-
-        platform.add_false_path_constraint(self.crg.cd_sys.clk, self.serdes_crg.cd_eem_sys.clk)
-
         self.submodules.rtio_tsc = rtio.TSC(glbl_fine_ts_width=3)
 
         drtioaux_csr_group = []

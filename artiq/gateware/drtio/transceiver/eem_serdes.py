@@ -9,50 +9,6 @@ from artiq.gateware.drtio.core import TransceiverInterface, ChannelInterface
 from operator import add
 
 
-class SerdesCRG(Module, AutoCSR):
-    def __init__(self, platform, main_clk, clk_freq, with_reset):
-        if with_reset:
-            self.mmcm_reset = CSRStorage(reset=1)
-            self.mmcm_locked = CSRStatus()
-        self.clock_domains.cd_eem_sys = ClockDomain()
-        self.clock_domains.cd_eem_sys5x = ClockDomain(reset_less=True)
-
-        eem_fb_in = Signal()
-        eem_fb_out = Signal()
-        mmcm_locked = Signal()
-        mmcm_eem_sys = Signal()
-        mmcm_eem_sys5x = Signal()
-
-        self.specials += [
-            Instance("MMCME2_BASE",
-                p_CLKIN1_PERIOD=1e9/clk_freq,
-                i_CLKIN1=main_clk,
-                i_RST=self.mmcm_reset.storage if with_reset else 0,
-
-                i_CLKFBIN=eem_fb_in,
-                o_CLKFBOUT=eem_fb_out,
-                o_LOCKED=mmcm_locked,
-
-                # VCO @ 1.25 GHz
-                p_CLKFBOUT_MULT_F=1.25e9/clk_freq, p_DIVCLK_DIVIDE=1,
-
-                # 125MHz
-                p_CLKOUT0_DIVIDE_F=10, p_CLKOUT0_PHASE=0.0, o_CLKOUT0=mmcm_eem_sys,
-
-                # 625MHz
-                p_CLKOUT1_DIVIDE=2, p_CLKOUT1_PHASE=0.0, o_CLKOUT1=mmcm_eem_sys5x,
-            ),
-            Instance("BUFG", i_I=mmcm_eem_sys, o_O=self.cd_eem_sys.clk),
-            Instance("BUFG", i_I=mmcm_eem_sys5x, o_O=self.cd_eem_sys5x.clk),
-            Instance("BUFG", i_I=eem_fb_out, o_O=eem_fb_in),
-
-            AsyncResetSynchronizer(self.cd_eem_sys, ~mmcm_locked),
-        ]
-
-        if with_reset:
-            self.specials += MultiReg(mmcm_locked, self.mmcm_locked.status)
-
-
 class RXPhy(Module):
     def __init__(self, i_pads):
         self.o = [Signal() for _ in range(4)]
@@ -116,11 +72,11 @@ class RXSerdes(Module):
                     o_SHIFTOUT2=shifts[i][1],
                     i_DDLY=ser_in[i],
                     i_BITSLIP=self.bitslip[i],
-                    i_CLK=ClockSignal("eem_sys5x"),
-                    i_CLKB=~ClockSignal("eem_sys5x"),
+                    i_CLK=ClockSignal("sys5x"),
+                    i_CLKB=~ClockSignal("sys5x"),
                     i_CE1=1,
-                    i_RST=ResetSignal("eem_sys"),
-                    i_CLKDIV=ClockSignal("eem_sys")),
+                    i_RST=ResetSignal(),
+                    i_CLKDIV=ClockSignal()),
                 
                 # Slave deserializer
                 Instance("ISERDESE2",
@@ -133,11 +89,11 @@ class RXSerdes(Module):
                     o_Q3=self.rxdata[i][1],
                     o_Q4=self.rxdata[i][0],
                     i_BITSLIP=self.bitslip[i],
-                    i_CLK=ClockSignal("eem_sys5x"),
-                    i_CLKB=~ClockSignal("eem_sys5x"),
+                    i_CLK=ClockSignal("sys5x"),
+                    i_CLKB=~ClockSignal("sys5x"),
                     i_CE1=1,
-                    i_RST=ResetSignal("eem_sys"),
-                    i_CLKDIV=ClockSignal("eem_sys"),
+                    i_RST=ResetSignal(),
+                    i_CLKDIV=ClockSignal(),
                     i_SHIFTIN1=shifts[i][0],
                     i_SHIFTIN2=shifts[i][1]),
 
@@ -186,9 +142,9 @@ class TXSerdes(Module):
                 p_INIT_OQ=0b00000,
                 o_OQ=self.ser_out[i],
                 o_TQ=self.t_out[i],
-                i_RST=ResetSignal("eem_sys"),
-                i_CLK=ClockSignal("eem_sys5x"),
-                i_CLKDIV=ClockSignal("eem_sys"),
+                i_RST=ResetSignal(),
+                i_CLK=ClockSignal("sys5x"),
+                i_CLKDIV=ClockSignal(),
                 i_D1=self.txdata[i][0],
                 i_D2=self.txdata[i][1],
                 i_D3=self.txdata[i][2],
@@ -235,7 +191,7 @@ class MultiEncoder(Module):
                 ),
             ]
             # Handle intermediate registers
-            self.sync.eem_sys += [
+            self.sync += [
                 disp_buf.eq(encoder.disp_out),
                 encoder.disp_in.eq(disp_buf),
                 output_buf.eq(encoder.output[5:10]),
@@ -258,7 +214,7 @@ class CrossbarDecoder(Module):
 
         self.submodules.decoder = Decoder()
 
-        self.sync.eem_sys += [
+        self.sync += [
             If(self.phase ^ self.delay,
                 buffer.eq(self.raw_input[1])
             ).Else(
@@ -362,8 +318,7 @@ class SerdesSingle(Module, AutoCSR):
         self.bitslip = CSR()
 
         for i in range(4):
-            self.specials += MultiReg(self.bitslip.re,
-                self.rx_serdes.bitslip[i], "eem_sys")
+            self.comb += self.rx_serdes.bitslip[i].eq(self.bitslip.re)
         
         self.dly_cnt_in = CSRStorage(5)
         self.dly_ld = CSR()
@@ -383,8 +338,6 @@ class SerdesSingle(Module, AutoCSR):
         # CSR for global decoding phase
         # This is to determine if this cycle should decode SERDES 0 or 1
         self.decoder_dly = CSRStorage()
-        dec_dly_cdc = Signal()
-        self.specials += MultiReg(self.decoder_dly.storage, dec_dly_cdc, "eem_sys")
 
         # Encoder/Decodfer interfaces
         self.submodules.encoder = MultiEncoder()
@@ -401,8 +354,8 @@ class SerdesSingle(Module, AutoCSR):
         
         # Control decoders phase
         self.comb += [
-            decoders[0].delay.eq(dec_dly_cdc),
-            decoders[1].delay.eq(dec_dly_cdc),
+            decoders[0].delay.eq(self.decoder_dly.storage),
+            decoders[1].delay.eq(self.decoder_dly.storage),
         ]
         
         # Route encoded symbols to TXSerdes
@@ -418,9 +371,7 @@ class SerdesSingle(Module, AutoCSR):
             decoders[i//2].raw_input[i%2].eq(self.rx_serdes.rxdata[i][0::2]) for i in range(4)
         ]
 
-        # Alternate phase
         self.phase = Signal()
-        # Assign to encoder and decoder
         self.comb += [
             self.encoder.phase.eq(self.phase),
             self.decoders[0].phase.eq(self.phase),
@@ -428,39 +379,24 @@ class SerdesSingle(Module, AutoCSR):
         ]
 
         # Monitor lane 0 decoder output for bitslip alignment
-        rx_d = Signal(8)
-        rx_k = Signal()
-
-        eem_sel_cdc = Signal(2)
-        self.specials += MultiReg(self.eem_sel.storage, eem_sel_cdc, "eem_sys")
-
-        self.sync.eem_sys += [
-            If(~self.phase,
-                rx_d.eq(decoders[0].d),
-                rx_k.eq(decoders[0].k),
-            )
-        ]
-
         self.submodules.reader = CommaReader()
-        comma = Signal()
-        self.comb += comma.eq(((rx_d == 0x3C) | (rx_d == 0xBC)) & rx_k)
-        self.specials += MultiReg(comma, self.reader.decoder_comma)
+        self.comb += self.reader.decoder_comma.eq(
+            ((decoders[0].d == 0x3C) | (decoders[0].d == 0xBC)) & decoders[0].k)
 
         # Read rxdata for rising edge alignment
         self.submodules.counter = RisingEdgeCounter()
 
-        self.comb += Case(eem_sel_cdc, {
+        self.comb += Case(self.eem_sel.storage, {
             lane_idx: self.counter.rxdata.eq(self.rx_serdes.rxdata[lane_idx]) for lane_idx in range(4)
         })
 
 
-class EEMSerdes(Module, TransceiverInterface):    
+class EEMSerdes(Module, TransceiverInterface):
     def __init__(self, platform, data_pads, start_idx=0):
         self.rx_ready = CSRStorage()
-        self.eem_sys_rst = Signal()
 
         phase = Signal()
-        self.sync.eem_sys += phase.eq(~phase)
+        self.sync += phase.eq(~phase)
 
         self.submodules.serdes = SerdesSingle(*data_pads[0])
         self.comb += self.serdes.phase.eq(phase)
@@ -472,6 +408,6 @@ class EEMSerdes(Module, TransceiverInterface):
         TransceiverInterface.__init__(self, channel_interfaces, start_idx=start_idx)
 
         self.comb += [
-            getattr(self, "cd_rtio_rx" + str(start_idx)).clk.eq(ClockSignal("eem_sys")),
-            getattr(self, "cd_rtio_rx" + str(start_idx)).rst.eq(ResetSignal("eem_sys"))
+            getattr(self, "cd_rtio_rx" + str(start_idx)).clk.eq(ClockSignal()),
+            getattr(self, "cd_rtio_rx" + str(start_idx)).rst.eq(ResetSignal())
         ]
