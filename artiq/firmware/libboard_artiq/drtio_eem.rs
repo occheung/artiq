@@ -52,7 +52,8 @@ fn write_config(config: &SerdesConfig) {
     }
 }
 
-fn get_deviation(low_rate: f64) -> f64 {
+fn get_deviation(low_rate: f32) -> f32 {
+    // abs() from f32 is not available in core library
     if low_rate < 0.5 {
         0.5 - low_rate
     } else {
@@ -61,12 +62,10 @@ fn get_deviation(low_rate: f64) -> f64 {
 }
 
 unsafe fn assign_delay() -> SerdesConfig {
-    let mut table: [f64; 32] = [0.0; 32];
-
     // Select an appropriate delay for EEM lane 0
     select_eem_pair(0);
 
-    let read_align = |dly: u8| -> f64 {
+    let read_align = |dly: u8| -> Option<f32> {
         apply_delay(dly);
         csr::eem_transceiver::serdes_counter_reset_write(1);
             
@@ -78,74 +77,54 @@ unsafe fn assign_delay() -> SerdesConfig {
             csr::eem_transceiver::serdes_counter_high_count_read(),
             csr::eem_transceiver::serdes_counter_low_count_read(),
         );
-        let overflow = csr::eem_transceiver::serdes_counter_overflow_read() == 1;
+        let overflow = csr::eem_transceiver::serdes_counter_overflow_read();
 
-        if overflow {
-            assert!(low != high);
-            if low > high {
-                1.0
-            } else {
-                0.0
-            }
+        if overflow == 1 {
+            None
         } else {
-        (low as f64) / ((high + low) as f64)
+            Some(low as f32 / (low + high) as f32)
         }
     };
 
-    let fill_align_table = |table: &mut [f64]| {
-        for delay in 0..32 {
-            table[delay as usize] = read_align(delay);
-        }
+    let mut best_dly = None;
+    let mut prev = None;
+    for curr_dly in 0..32 {
+        if let Some(curr_low_rate) = read_align(curr_dly) {
+            if let Some(prev_low_rate) = prev {
+                if prev_low_rate <= curr_low_rate && curr_low_rate >= 0.5 {
+                    let prev_dev = 0.5 - prev_low_rate;
+                    let curr_dev = curr_low_rate - 0.5;
+                    let (selected_idx, min_dev) = if prev_dev < curr_dev {
+                        (curr_dly - 1, prev_dev)
+                    } else {
+                        (curr_dly, curr_dev)
     };
 
-    fill_align_table(&mut table);
-
-    let get_rising_crossover = |table: &[f64]| -> Option<(usize, usize)> {
-        let mut begin = None;
-        let mut min_deviation = 0.5;
-        let mut best_idx = 0;
-        for (tap, low_rate) in table.iter().enumerate() {
-            if *low_rate < 0.1 {
-                begin.replace(tap);
-            }
-
-            if begin.is_some() {
-                let deviation = get_deviation(*low_rate);
-                if deviation < min_deviation {
-                    min_deviation = deviation;
-                    best_idx = tap;
-                }
-
-                // The ratio will not be any closer to 50% after this
-                // within the same slope
-                if *low_rate >= 0.5 {
-                    return Some((best_idx, tap))
+                    // The same edge may not appear in other lanes due to skew
+                    // 5 taps is very conservative, generally it is 1 or 2
+                    if selected_idx < 5 {
+                        prev = None;
+                        continue;
+                    } else {
+                        debug!("Calibrated min deviation: {}", min_dev);
+                        best_dly = Some(selected_idx);
+                        break;
                 }
             }
         }
 
-        None
-    };
-
-    let best_idx;
-    let mut start_search_idx = 0;
-    loop {
-        if let Some((opt_idx, end_tap)) = get_rising_crossover(&table[start_search_idx..]) {
-            if opt_idx < 5 {
-                // The same edge may not appear in other lanes due to skew
-                // 5 taps is very conservative, generally it is 1 or 2
-                start_search_idx += end_tap + 1;
-                continue;
+            if curr_low_rate <= 0.5 {
+                prev = Some(curr_low_rate);
             }
-            best_idx = opt_idx + start_search_idx;
-            break;
         } else {
-            panic!("No suitable delay tap alignment!")
+            prev = None;
         }
     }
 
-    apply_delay(best_idx as u8);
-    let mut delay_list = [best_idx as u8; 4];
+    let best_dly = best_dly.expect("No suitable delay tap alignment!");
+
+    apply_delay(best_dly as u8);
+    let mut delay_list = [best_dly as u8; 4];
 
     // Assign delay for other lanes
     for lane_no in 1..=3 {
@@ -154,8 +133,8 @@ unsafe fn assign_delay() -> SerdesConfig {
         let mut min_deviation = 0.5;
         let mut min_idx = 0;
         for dly_delta in -3..=3 {
-            let index = (best_idx as i8 + dly_delta) as u8;
-            let low_rate = read_align(index);
+            let index = (best_dly as i8 + dly_delta) as u8;
+            if let Some(low_rate) = read_align(index) {
             let deviation = get_deviation(low_rate);
 
             if deviation < min_deviation {
@@ -163,9 +142,11 @@ unsafe fn assign_delay() -> SerdesConfig {
                 min_idx = index;
             }
         }
+        }
 
         apply_delay(min_idx);
         delay_list[lane_no] = min_idx;
+        debug!("Calibrated min deviation: {}", min_deviation);
     }
 
     debug!("DRTIO-over-EEM calibration: {:?}", delay_list);
