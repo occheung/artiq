@@ -253,49 +253,25 @@ class CrossbarDecoder(Module):
         self.delay = Signal()
         self.phase = Signal()
 
-        # Optional extra stage for both lanes
-        self.delay_buf = [ Signal(5) for _ in range(2) ]
-        self.sync.eem_sys += [
-            self.delay_buf[idx].eq(self.raw_input[idx]) for idx in range(2)
-        ]
-
         # Intermediate register for input
         buffer = Signal(5)
 
         self.submodules.decoder = Decoder()
 
-        # Update synchronous elements
         self.sync.eem_sys += [
-            If(~self.phase,
-                If(~self.delay,
-                    buffer.eq(self.raw_input[0]),
-                ).Else(
-                    buffer.eq(self.delay_buf[0]),
-                )
+            If(self.phase ^ self.delay,
+                buffer.eq(self.raw_input[1])
             ).Else(
-                If(~self.delay,
-                    buffer.eq(self.raw_input[1]),
-                ).Else(
-                    buffer.eq(self.delay_buf[1]),
-                )
+                buffer.eq(self.raw_input[0])
             )
         ]
-        
-        # Send appropriate input to decoder
+
         self.comb += [
-            If(self.phase,
-                If(~self.delay,
-                    self.decoder.input.eq(Cat(buffer, self.raw_input[0])),
-                ).Else(
-                    self.decoder.input.eq(Cat(buffer, self.delay_buf[0])),
-                )
+            If(self.phase ^ self.delay,
+                self.decoder.input.eq(Cat(buffer, self.raw_input[0]))
             ).Else(
-                If(~self.delay,
-                    self.decoder.input.eq(Cat(buffer, self.raw_input[1])),
-                ).Else(
-                    self.decoder.input.eq(Cat(buffer, self.delay_buf[1])),
-                )
-            ),
+                self.decoder.input.eq(Cat(buffer, self.raw_input[1]))
+            )
         ]
 
         self.comb += [
@@ -382,12 +358,11 @@ class SerdesSingle(Module, AutoCSR):
         # EEM lane select
         self.eem_sel = CSRStorage(2)
 
-        # CSR for delay & bitslip
+        # CSR for bitslip
         self.bitslip = CSR()
 
         for i in range(4):
-            self.specials += MultiReg(
-                (self.eem_sel.storage == i) & self.bitslip.re,
+            self.specials += MultiReg(self.bitslip.re,
                 self.rx_serdes.bitslip[i], "eem_sys")
         
         self.dly_cnt_in = CSRStorage(5)

@@ -176,9 +176,6 @@ unsafe fn assign_delay() -> SerdesConfig {
 }
 
 unsafe fn assign_bitslip() {
-    // Assign bitslip for lane 0
-    select_eem_pair(0);
-
     let mut bitslip = 0;
     for slip in 0..=9 {
         update_invert(slip >= 5);
@@ -198,15 +195,6 @@ unsafe fn assign_bitslip() {
     }
 
     debug!("Apply {} double bitslips", bitslip);
-
-    // Copy the lane 0 bitslip to all other lanes
-    for lane_no in 1..=3 {
-        select_eem_pair(lane_no);
-
-        for _slip in 0..bitslip {
-            apply_bitslip();
-        }
-    }
 }
 
 pub fn configure() {
