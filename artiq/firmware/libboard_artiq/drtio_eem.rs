@@ -106,7 +106,6 @@ unsafe fn assign_delay() -> SerdesConfig {
                         prev = None;
                         continue;
                     } else {
-                        debug!("Calibrated min deviation: {}", min_dev);
                         best_dly = Some(selected_idx);
                         break;
                     }
@@ -146,7 +145,6 @@ unsafe fn assign_delay() -> SerdesConfig {
 
         apply_delay(min_idx);
         delay_list[lane_no] = min_idx;
-        debug!("Calibrated min deviation: {}", min_deviation);
     }
 
     debug!("DRTIO-over-EEM calibration: {:?}", delay_list);
