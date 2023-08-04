@@ -177,26 +177,28 @@ unsafe fn assign_bitslip() {
 }
 
 pub fn configure() {
-    unsafe {
-        config::read("eem_drtio_delay", |r| {
-            match r {
-                Ok(record) => {
-                    info!("Loading DRTIO-over-EEM configuration from flash.");
+    config::read("eem_drtio_delay", |r| {
+        match r {
+            Ok(record) => {
+                info!("Loading DRTIO-over-EEM configuration from flash.");
+                unsafe {
                     apply_config(&*(record.as_ptr() as *const SerdesConfig));
                     assign_bitslip();
                     csr::eem_transceiver::rx_ready_write(1);
-                },
+                }
+            },
 
-                Err(_) => {
-                    info!("Calibrate DRTIO-over-EEM...");
-                    let config = assign_delay();
-            
+            Err(_) => {
+                info!("Calibrate DRTIO-over-EEM...");
+                let config;
+                unsafe {
+                    config = assign_delay();
                     assign_bitslip();
                     csr::eem_transceiver::rx_ready_write(1);
-
-                    config::write("eem_drtio_delay", config.as_bytes()).unwrap();
                 }
+
+                config::write("eem_drtio_delay", config.as_bytes()).unwrap();
             }
-        })
-    }
+        }
+    })
 }
