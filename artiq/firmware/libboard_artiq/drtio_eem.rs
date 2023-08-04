@@ -45,7 +45,7 @@ fn apply_delay(tap: u8) {
     }
 }
 
-fn write_config(config: &SerdesConfig) {
+fn apply_config(config: &SerdesConfig) {
     for eem_pair_no in 0..4 {
         select_eem_pair(eem_pair_no);
         apply_delay(config.delay[eem_pair_no]);
@@ -184,7 +184,7 @@ pub fn configure() {
             match r {
                 Ok(record) => {
                     info!("Loading DRTIO-over-EEM configuration from flash.");
-                    write_config(&*(record.as_ptr() as *const SerdesConfig));
+                    apply_config(&*(record.as_ptr() as *const SerdesConfig));
                     assign_bitslip();
                     csr::eem_transceiver::rx_ready_write(1);
                 },
