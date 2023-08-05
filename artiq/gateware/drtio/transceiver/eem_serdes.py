@@ -1,12 +1,7 @@
 from migen import *
-from migen.genlib.resetsync import AsyncResetSynchronizer
-from migen.genlib.cdc import MultiReg
-from migen.genlib.misc import WaitTimer
 from misoc.interconnect.csr import *
 from misoc.cores.code_8b10b import SingleEncoder, Decoder
 from artiq.gateware.drtio.core import TransceiverInterface, ChannelInterface
-
-from operator import add
 
 
 class RXPhy(Module):
