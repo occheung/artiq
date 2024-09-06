@@ -40,11 +40,17 @@ impl EEPROM {
         self.select()?;
 
         i2c::start(self.busno)?;
-        i2c::write(self.busno, self.address)?;
-        i2c::write(self.busno, addr)?;
+        if !i2c::write(self.busno, self.address)? {
+            return Err("eeprom failed to ack control byte (write)");
+        }
+        if !i2c::write(self.busno, addr)? {
+            return Err("eeprom failed to ack read address");
+        }
 
         i2c::restart(self.busno)?;
-        i2c::write(self.busno, self.address | 1)?;
+        if !i2c::write(self.busno, self.address | 1)? {
+            return Err("eeprom failed to ack control byte (read)");
+        }
         let buf_len = buf.len();
         for (i, byte) in buf.iter_mut().enumerate() {
             *byte = i2c::read(self.busno, i < buf_len - 1)?;

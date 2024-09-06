@@ -143,9 +143,15 @@ impl IoExpander {
 
     fn write(&self, addr: u8, value: u8) -> Result<(), &'static str> {
         i2c::start(self.busno)?;
-        i2c::write(self.busno, self.address)?;
-        i2c::write(self.busno, addr)?;
-        i2c::write(self.busno, value)?;
+        if !i2c::write(self.busno, self.address).unwrap() {
+            return Err("io expander failed to ack control byte");
+        }
+        if !i2c::write(self.busno, addr).unwrap() {
+            return Err("io expander failed to ack register address");
+        }
+        if !i2c::write(self.busno, value).unwrap() {
+            return Err("io expander failed to ack value");
+        }
         i2c::stop(self.busno)?;
         Ok(())
     }
